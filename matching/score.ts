@@ -8,6 +8,7 @@
 import type {
   CandidateMatch,
   MatchReason,
+  ScoreComponent,
   SkillLevel,
   SportId,
   UserProfile,
@@ -143,18 +144,70 @@ export function scoreCandidate(
   const shared = sharedSports(viewer, candidate);
   const overlap = sharedSlots(viewer, candidate);
 
-  const score =
-    WEIGHTS.intent * intentScore(viewer, candidate) +
-    WEIGHTS.sport * sportScore(shared, viewer, candidate) +
-    WEIGHTS.schedule * scheduleScore(overlap) +
-    WEIGHTS.skill * skillScore(viewer, candidate, shared) +
-    WEIGHTS.interests * interestsScore(viewer, candidate);
+  const terms: Array<{ key: keyof typeof WEIGHTS; label: string; raw: number; detail: string }> = [
+    {
+      key: 'intent',
+      label: 'Dating intent',
+      raw: intentScore(viewer, candidate),
+      detail: `${viewer.preferences.intent} vs ${candidate.preferences.intent}`,
+    },
+    {
+      key: 'sport',
+      label: 'Sport overlap',
+      raw: sportScore(shared, viewer, candidate),
+      detail: shared.length
+        ? `${shared.length} shared: ${shared.join(', ')}`
+        : 'none shared',
+    },
+    {
+      key: 'schedule',
+      label: 'Schedule overlap',
+      raw: scheduleScore(overlap),
+      detail: `${overlap} shared window${overlap === 1 ? '' : 's'}`,
+    },
+    {
+      key: 'skill',
+      label: 'Skill match',
+      raw: skillScore(viewer, candidate, shared),
+      detail: shared.length
+        ? shared
+            .map((s) => {
+              const a = viewer.sports.find((x) => x.sport === s)!.skill;
+              const b = candidate.sports.find((x) => x.sport === s)!.skill;
+              return `${s}: ${a}/${b}`;
+            })
+            .join(', ')
+        : 'no shared sport',
+    },
+    {
+      key: 'interests',
+      label: 'Interests',
+      raw: interestsScore(viewer, candidate),
+      detail: [
+        viewer.year === candidate.year ? `same year (${viewer.year})` : null,
+        viewer.major === candidate.major ? `same major` : null,
+      ]
+        .filter(Boolean)
+        .join(', ') || 'no overlap',
+    },
+  ];
+
+  const breakdown: ScoreComponent[] = terms.map((t) => ({
+    label: t.label,
+    weight: WEIGHTS[t.key],
+    raw: Math.round(t.raw * 100) / 100,
+    weighted: Math.round(WEIGHTS[t.key] * t.raw * 1000) / 1000,
+    detail: t.detail,
+  }));
+
+  const score = breakdown.reduce((total, c) => total + c.weighted, 0);
 
   return {
     user: candidate,
     score: Math.round(score * 100) / 100,
     reasons: buildReasons(viewer, candidate, shared, overlap),
     sharedSports: shared,
+    breakdown,
   };
 }
 

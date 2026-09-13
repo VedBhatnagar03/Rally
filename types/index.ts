@@ -60,11 +60,22 @@ export interface MatchReason {
   text: string;
 }
 
+/** One weighted term of a candidate's score, for explaining the math. */
+export interface ScoreComponent {
+  label: string;
+  weight: number;
+  raw: number;
+  weighted: number;
+  detail: string;
+}
+
 export interface CandidateMatch {
   user: UserProfile;
   score: number;
   reasons: MatchReason[];
   sharedSports: SportId[];
+  /** Optional: present for debugging/demo, safe for the UI to ignore. */
+  breakdown?: ScoreComponent[];
 }
 
 export type RallyRequestStatus = 'pending' | 'accepted' | 'declined';
