@@ -309,8 +309,7 @@ export const supabaseApi: RallyApi = {
     if (!a || !b) return fail('Could not load both participants.');
 
     const shared = intersectAvailability(a, b);
-    const venues = venuesForSport(loaded.rally.sport);
-    const venue = venues[0] ?? null;
+    const venue = recommendVenue(loaded.rally.sport);
     if (!venue) return fail('No venue available for this sport.');
 
     const options: ScheduleOption[] = shared.slice(0, 3).map((slot) => ({
@@ -331,6 +330,9 @@ export const supabaseApi: RallyApi = {
         scheduled_block: option.slot.block,
         venue_id: option.venue.id,
         status: 'scheduled',
+        booking_status: option.venue.requiresReservation
+          ? 'pending'
+          : 'not_required',
       })
       .eq('id', rallyId)
       .select()

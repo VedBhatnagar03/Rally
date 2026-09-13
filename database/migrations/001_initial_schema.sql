@@ -49,8 +49,9 @@ create table availability (
   primary key (profile_id, day, block)
 );
 
+-- Slug ids (e.g. 'arc-courts') so venue references are readable in logs.
 create table venues (
-  id uuid primary key default gen_random_uuid(),
+  id text primary key,
   name text not null,
   sports sport_id[] not null,
   location text not null,
@@ -78,7 +79,7 @@ create table rallies (
   status rally_status not null default 'accepted',
   scheduled_date date,
   scheduled_block time_block,
-  venue_id uuid references venues(id),
+  venue_id text references venues(id),
   booking_status booking_status not null default 'pending',
   booking_owner_id uuid references profiles(id),
   created_at timestamptz not null default now()
