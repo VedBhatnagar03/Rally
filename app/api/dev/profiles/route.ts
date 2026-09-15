@@ -3,6 +3,7 @@
 import { NextResponse } from 'next/server';
 import { api } from '@/lib/client';
 import { USE_MOCKS } from '@/lib/api';
+import { listFastifyProfiles } from '@/lib/fastify/actions';
 import { supabase } from '@/lib/supabase/client';
 import type { UserProfile } from '@/types';
 
@@ -10,6 +11,11 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
+    if (process.env.NEXT_PUBLIC_RALLY_DATA_SOURCE === 'fastify') {
+      const res = await listFastifyProfiles();
+      return NextResponse.json(res);
+    }
+
     if (USE_MOCKS) {
       const res = await api.getCandidates('*');
       if (!res.ok) return NextResponse.json(res);

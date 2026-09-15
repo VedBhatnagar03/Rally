@@ -1,0 +1,305 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  PENDING_EMAIL_VERIFICATION
+  ACTIVE
+  SUSPENDED
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum Gender {
+  WOMAN
+  MAN
+  NON_BINARY
+  SELF_DESCRIBE
+  PREFER_NOT_TO_SAY
+}
+
+enum DatingIntent {
+  DATING
+  FRIENDS
+  CASUAL_PLAY
+  COMPETITIVE
+}
+
+enum Sport {
+  TENNIS
+  PICKLEBALL
+  BADMINTON
+  SQUASH
+  RACQUETBALL
+  TABLE_TENNIS
+}
+
+enum SkillLevel {
+  BEGINNER
+  CASUAL
+  INTERMEDIATE
+  ADVANCED
+  COMPETITIVE
+}
+
+enum RallyStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELLED
+  COMPLETED
+}
+
+enum CourtBookingStatus {
+  NOT_STARTED
+  NEEDS_USER_ACTION
+  BOOKED
+  UNAVAILABLE
+}
+
+enum ReportStatus {
+  OPEN
+  REVIEWING
+  RESOLVED
+  DISMISSED
+}
+
+enum ReportCategory {
+  HARASSMENT
+  IMPERSONATION
+  UNSAFE_BEHAVIOR
+  NO_SHOW
+  SPAM
+  OTHER
+}
+
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  passwordHash String
+  status       UserStatus @default(PENDING_EMAIL_VERIFICATION)
+  role         UserRole   @default(USER)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  profile                 Profile?
+  sportProfiles           SportProfile[]
+  availability            AvailabilityWindow[]
+  sentRallies             Rally[]                  @relation("SentRallies")
+  receivedRallies         Rally[]                  @relation("ReceivedRallies")
+  emailVerificationTokens EmailVerificationToken[]
+  refreshTokens           RefreshToken[]
+  auditLogs               AuditLog[]
+  photos                  Photo[]
+  blocksCreated           Block[]                  @relation("Blocker")
+  blocksReceived          Block[]                  @relation("Blocked")
+  reportsCreated          Report[]                 @relation("Reporter")
+  reportsReceived         Report[]                 @relation("Reported")
+  feedback                RallyFeedback[]
+  analyticsEvents         AnalyticsEvent[]
+}
+
+model EmailVerificationToken {
+  id         String    @id @default(cuid())
+  userId     String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  metadata  Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+}
+
+model Profile {
+  id              String       @id @default(cuid())
+  userId          String       @unique
+  displayName     String
+  major           String?
+  classYear       String?
+  bio             String?
+  gender          Gender?
+  datingIntent    DatingIntent @default(DATING)
+  interestedIn    Gender[]
+  campusZone      String?
+  trustScore      Int          @default(50)
+  profileComplete Boolean      @default(false)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SportProfile {
+  id         String     @id @default(cuid())
+  userId     String
+  sport      Sport
+  skillLevel SkillLevel
+  intensity  Int        @default(3)
+  favorite   Boolean    @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sport])
+}
+
+model AvailabilityWindow {
+  id        String   @id @default(cuid())
+  userId    String
+  dayOfWeek Int
+  startTime String
+  endTime   String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Photo {
+  id        String   @id @default(cuid())
+  userId    String
+  url       String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, sortOrder])
+}
+
+model Venue {
+  id              String  @id @default(cuid())
+  name            String  @unique
+  campusArea      String
+  bookingUrl      String?
+  bookingLeadTime Int?
+  sports          Sport[]
+  notes           String?
+  rallies         Rally[]
+}
+
+model Rally {
+  id               String             @id @default(cuid())
+  senderId         String
+  receiverId       String
+  sport            Sport
+  proposedStartAt  DateTime
+  proposedEndAt    DateTime
+  venueId          String?
+  status           RallyStatus        @default(PENDING)
+  courtStatus      CourtBookingStatus @default(NOT_STARTED)
+  courtNumber      String?
+  bookingOwnerId   String?
+  bookingReference String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  sender   User            @relation("SentRallies", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User            @relation("ReceivedRallies", fields: [receiverId], references: [id], onDelete: Cascade)
+  venue    Venue?          @relation(fields: [venueId], references: [id])
+  feedback RallyFeedback[]
+  reports  Report[]
+
+  @@index([senderId, status])
+  @@index([receiverId, status])
+}
+
+model RallyFeedback {
+  id              String   @id @default(cuid())
+  rallyId         String
+  userId          String
+  played          Boolean
+  feltSafe        Boolean
+  rallyAgain      Boolean
+  experienceScore Int?
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  rally Rally @relation(fields: [rallyId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([rallyId, userId])
+  @@index([userId, createdAt])
+}
+
+model Block {
+  id        String   @id @default(cuid())
+  blockerId String
+  blockedId String
+  reason    String?
+  createdAt DateTime @default(now())
+
+  blocker User @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@index([blockedId])
+}
+
+model Report {
+  id             String         @id @default(cuid())
+  reporterId     String
+  reportedUserId String
+  rallyId        String?
+  category       ReportCategory
+  status         ReportStatus   @default(OPEN)
+  details        String
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  reporter     User   @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  reportedUser User   @relation("Reported", fields: [reportedUserId], references: [id], onDelete: Cascade)
+  rally        Rally? @relation(fields: [rallyId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([reportedUserId, createdAt])
+}
+
+model AnalyticsEvent {
+  id        String   @id @default(cuid())
+  userId    String?
+  name      String
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([name, createdAt])
+  @@index([userId, createdAt])
+}
