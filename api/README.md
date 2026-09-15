@@ -91,6 +91,8 @@ Current foundation:
 
 This repo starts with a secure backend spine. It intentionally does not automate Active Illini court reservations. V1 treats court booking as a guided handoff: Rally suggests a sport, venue, and time, then stores the booking status and confirmation details once a user reserves through the official campus workflow.
 
+The shared Next.js app can run its backend harness against this service by setting `NEXT_PUBLIC_RALLY_DATA_SOURCE=fastify` in the root `.env.local`. For local harness use only, set `DEV_TOOLS_ENABLED=true` in `api/.env`; this enables `/v1/dev/*` profile listing and session minting. Those routes return `404` in production or whenever the flag is off.
+
 ## Verified Local Flow
 
 ```bash

@@ -10,7 +10,11 @@ const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().default("15m"),
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
-  ADMIN_EMAILS: z.string().default("")
+  ADMIN_EMAILS: z.string().default(""),
+  DEV_TOOLS_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true")
 });
 
 export const env = envSchema.parse(process.env);

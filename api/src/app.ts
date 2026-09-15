@@ -17,6 +17,7 @@ import { rallyRoutes } from "./routes/rallies.js";
 import { recommendationRoutes } from "./routes/recommendations.js";
 import { safetyRoutes } from "./routes/safety.js";
 import { venueRoutes } from "./routes/venues.js";
+import { devRoutes } from "./routes/dev.js";
 import { InvalidEmailDomainError } from "./utils/email.js";
 
 export function buildApp() {
@@ -77,6 +78,7 @@ export function buildApp() {
   app.register(feedbackRoutes, { prefix: "/v1/feedback" });
   app.register(analyticsRoutes, { prefix: "/v1/analytics" });
   app.register(adminRoutes, { prefix: "/v1/admin" });
+  app.register(devRoutes, { prefix: "/v1/dev" });
 
   return app;
 }
