@@ -19,10 +19,16 @@ export const upsertProfileSchema = z.object({
   major: z.string().trim().max(120).optional(),
   classYear: z.string().trim().max(40).optional(),
   bio: z.string().trim().max(280).optional(),
+  age: z.number().int().min(18).max(100).optional(),
+  preferredAgeMin: z.number().int().min(18).max(100).default(18),
+  preferredAgeMax: z.number().int().min(18).max(100).default(30),
   gender: z.nativeEnum(Gender).optional(),
   datingIntent: z.nativeEnum(DatingIntent).default(DatingIntent.DATING),
   interestedIn: z.array(z.nativeEnum(Gender)).max(5).default([]),
   campusZone: z.string().trim().max(80).optional(),
   sports: z.array(sportProfileSchema).min(1).max(6),
   availability: z.array(availabilityWindowSchema).min(1).max(21)
+}).refine((profile) => profile.preferredAgeMin <= profile.preferredAgeMax, {
+  message: "preferredAgeMin must be less than or equal to preferredAgeMax",
+  path: ["preferredAgeMax"]
 });

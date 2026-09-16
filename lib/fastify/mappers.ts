@@ -40,6 +40,9 @@ export interface ApiProfileEnvelope {
     major: string | null;
     classYear: string | null;
     bio: string | null;
+    age: number | null;
+    preferredAgeMin: number;
+    preferredAgeMax: number;
     gender: ApiGender | null;
     datingIntent: ApiDatingIntent;
     interestedIn: ApiGender[];
@@ -163,7 +166,7 @@ export function toUserProfile(user: ApiProfileEnvelope): UserProfile {
   return {
     id: user.id,
     firstName: displayName.split(/\s+/)[0] || displayName,
-    age: 18,
+    age: profile?.age ?? 18,
     year: profile?.classYear ?? 'UIUC',
     major: profile?.major ?? 'Undeclared',
     bio: profile?.bio ?? '',
@@ -175,8 +178,8 @@ export function toUserProfile(user: ApiProfileEnvelope): UserProfile {
         ? interestedInMap[profile.interestedIn[0]]
         : 'everyone',
       intent: profile?.datingIntent ? intentMap[profile.datingIntent] : 'open',
-      ageMin: 18,
-      ageMax: 30,
+      ageMin: profile?.preferredAgeMin ?? 18,
+      ageMax: profile?.preferredAgeMax ?? 30,
     },
     sports,
     availability: user.availability.map(toAvailabilitySlot),

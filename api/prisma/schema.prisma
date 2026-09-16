@@ -155,6 +155,9 @@ model Profile {
   major           String?
   classYear       String?
   bio             String?
+  age             Int?
+  preferredAgeMin Int          @default(18)
+  preferredAgeMax Int          @default(30)
   gender          Gender?
   datingIntent    DatingIntent @default(DATING)
   interestedIn    Gender[]
