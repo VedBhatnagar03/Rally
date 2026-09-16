@@ -30,8 +30,6 @@ const baseUrl = process.env.NEXT_PUBLIC_RALLY_API_URL ?? 'http://localhost:4000'
 
 const sessionCache = new Map<string, string>();
 const rallyCache = new Map<string, Rally>();
-const selectedSlotCache = new Map<string, ScheduleOption>();
-const feedbackCache = new Map<string, Feedback[]>();
 
 function ok<T>(data: T): ActionResult<T> {
   return { ok: true, data };
@@ -77,6 +75,13 @@ async function authed<T>(userId: string, path: string, options: RequestInit = {}
       ...options.headers,
     },
   });
+}
+
+async function loadRallies(userId: string) {
+  const body = await authed<{ rallies: ApiRallyEnvelope[] }>(userId, '/v1/rallies');
+  const rallies = body.rallies.map((rally) => toRally(rally));
+  for (const rally of rallies) rallyCache.set(rally.id, rally);
+  return rallies;
 }
 
 export async function listFastifyProfiles(): Promise<ActionResult<UserProfile[]>> {
@@ -150,8 +155,26 @@ export const fastifyApi: RallyApi = {
     }
   },
 
-  async getIncomingRallies(_userId: string) {
-    return fail('Incoming Rally listing is not wired through the Fastify bridge yet.');
+  async getIncomingRallies(userId: string) {
+    try {
+      const body = await authed<{ rallies: ApiRallyEnvelope[] }>(userId, '/v1/rallies');
+      for (const rally of body.rallies) rallyCache.set(rally.id, toRally(rally));
+
+      return ok(
+        body.rallies
+          .filter((rally) => rally.receiverId === userId && rally.status === 'PENDING')
+          .map((rally): RallyRequest => ({
+            id: rally.id,
+            senderId: rally.senderId,
+            receiverId: rally.receiverId,
+            sport: toRallyRequest(rally).sport,
+            status: 'pending',
+            createdAt: rally.createdAt,
+          })),
+      );
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : 'Could not load incoming Rallies.');
+    }
   },
 
   async respondToRally(requestId: string, status: RallyRequestStatus) {
@@ -208,19 +231,29 @@ export const fastifyApi: RallyApi = {
   },
 
   async selectSchedule(rallyId: string, option: ScheduleOption) {
-    const rally = rallyCache.get(rallyId);
-    if (!rally) return fail('Rally was not created in this browser session.');
+    try {
+      const rally = rallyCache.get(rallyId);
+      if (!rally) return fail('Rally was not loaded in this browser session.');
 
-    selectedSlotCache.set(rallyId, option);
-    const updated: Rally = {
-      ...rally,
-      status: 'scheduled',
-      selectedSlot: option,
-      venue: option.venue,
-      bookingStatus: option.venue.requiresReservation ? 'pending' : 'not_required',
-    };
-    rallyCache.set(rallyId, updated);
-    return ok(updated);
+      const body = await authed<{ rally: ApiRallyEnvelope }>(
+        rally.participantIds[0],
+        `/v1/rallies/${rallyId}/schedule`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            proposedStartAt: slotStart(option).toISOString(),
+            proposedEndAt: slotEnd(option).toISOString(),
+            venueId: option.venue.id,
+          }),
+        },
+      );
+
+      const updated = toRally(body.rally, option);
+      rallyCache.set(rallyId, updated);
+      return ok(updated);
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : 'Could not save schedule.');
+    }
   },
 
   async getVenueRecommendations(_rallyId: string) {
@@ -240,7 +273,7 @@ export const fastifyApi: RallyApi = {
           body: JSON.stringify({ courtStatus: 'BOOKED' }),
         },
       );
-      const updated = toRally(body.rally, selectedSlotCache.get(rallyId) ?? null);
+      const updated = toRally(body.rally, rally.selectedSlot);
       rallyCache.set(rallyId, updated);
       return ok(updated);
     } catch (err) {
@@ -249,16 +282,36 @@ export const fastifyApi: RallyApi = {
   },
 
   async getUpcomingRallies(userId: string) {
-    return ok([...rallyCache.values()].filter((rally) => rally.participantIds.includes(userId)));
+    try {
+      const rallies = await loadRallies(userId);
+      return ok(
+        rallies.filter(
+          (rally) =>
+            rally.participantIds.includes(userId) &&
+            (rally.status === 'accepted' || rally.status === 'scheduled'),
+        ),
+      );
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : 'Could not load upcoming Rallies.');
+    }
   },
 
   async completeRally(rallyId: string) {
-    const rally = rallyCache.get(rallyId);
-    if (!rally) return fail('Rally was not created in this browser session.');
+    try {
+      const rally = rallyCache.get(rallyId);
+      if (!rally) return fail('Rally was not loaded in this browser session.');
 
-    const updated = { ...rally, status: 'completed' as const };
-    rallyCache.set(rallyId, updated);
-    return ok(updated);
+      const body = await authed<{ rally: ApiRallyEnvelope }>(
+        rally.participantIds[0],
+        `/v1/rallies/${rallyId}/complete`,
+        { method: 'POST' },
+      );
+      const updated = toRally(body.rally, rally.selectedSlot);
+      rallyCache.set(rallyId, updated);
+      return ok(updated);
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : 'Could not complete Rally.');
+    }
   },
 
   async submitFeedback(
@@ -276,10 +329,6 @@ export const fastifyApi: RallyApi = {
         rallyAgain,
         createdAt: new Date().toISOString(),
       };
-      const previous = (feedbackCache.get(rallyId) ?? []).filter(
-        (feedback) => feedback.userId !== userId,
-      );
-      feedbackCache.set(rallyId, [...previous, entry]);
 
       await authed(userId, `/v1/feedback/rallies/${rallyId}`, {
         method: 'POST',
@@ -298,14 +347,37 @@ export const fastifyApi: RallyApi = {
   },
 
   async getRallyOutcome(rallyId: string) {
-    const responses = feedbackCache.get(rallyId) ?? [];
-    const bothResponded = responses.length === 2;
-    const outcome: RallyOutcome = {
-      rallyId,
-      bothResponded,
-      isMutualMatch:
-        bothResponded && responses.every((feedback) => feedback.rallyAgain === 'yes'),
-    };
-    return ok(outcome);
+    try {
+      const rally = rallyCache.get(rallyId);
+      if (!rally) return fail('Rally was not loaded in this browser session.');
+
+      const body = await authed<{ outcome: RallyOutcome }>(
+        rally.participantIds[0],
+        `/v1/feedback/rallies/${rallyId}/outcome`,
+      );
+      return ok(body.outcome);
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : 'Could not load Rally outcome.');
+    }
   },
 };
+
+function slotStart(option: ScheduleOption) {
+  return new Date(`${option.date}T${blockStart(option.slot.block)}:00`);
+}
+
+function slotEnd(option: ScheduleOption) {
+  return new Date(`${option.date}T${blockEnd(option.slot.block)}:00`);
+}
+
+function blockStart(block: ScheduleOption['slot']['block']) {
+  if (block === 'morning') return '09:00';
+  if (block === 'afternoon') return '14:00';
+  return '18:00';
+}
+
+function blockEnd(block: ScheduleOption['slot']['block']) {
+  if (block === 'morning') return '10:00';
+  if (block === 'afternoon') return '15:00';
+  return '19:00';
+}

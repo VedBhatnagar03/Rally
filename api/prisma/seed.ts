@@ -1,11 +1,13 @@
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
+import { hashPassword } from "../src/utils/password.js";
 
 const prisma = new PrismaClient();
 const adminEmails = (process.env.ADMIN_EMAILS ?? "")
   .split(",")
   .map((email) => email.trim().toLowerCase())
   .filter(Boolean);
+const adminPassword = process.env.RALLY_SEED_ADMIN_PASSWORD ?? "correct-horse-battery-staple";
 
 const venues = [
   {
@@ -44,10 +46,23 @@ async function main() {
   }
 
   if (adminEmails.length > 0) {
-    await prisma.user.updateMany({
-      where: { email: { in: adminEmails } },
-      data: { role: "ADMIN" }
-    });
+    const passwordHash = await hashPassword(adminPassword);
+
+    for (const email of adminEmails) {
+      await prisma.user.upsert({
+        where: { email },
+        create: {
+          email,
+          passwordHash,
+          status: "ACTIVE",
+          role: "ADMIN"
+        },
+        update: {
+          status: "ACTIVE",
+          role: "ADMIN"
+        }
+      });
+    }
   }
 }
 

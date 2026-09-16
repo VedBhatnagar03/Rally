@@ -12,6 +12,7 @@ import type {
   ScheduleOption,
   SkillLevel,
   SportId,
+  TimeBlock,
   UserProfile,
   Venue,
 } from '@/types';
@@ -212,13 +213,16 @@ export function toRally(
   selectedSlot: ScheduleOption | null = null,
 ): Rally {
   const venue = rally.venue ? toVenue(rally.venue) : (selectedSlot?.venue ?? null);
+  const persistedSlot =
+    selectedSlot ?? (venue ? toScheduleOptionFromRally(rally, venue) : null);
+
   return {
     id: rally.id,
     requestId: rally.id,
     participantIds: [rally.senderId, rally.receiverId],
     sport: fromApiSport(rally.sport) ?? 'tennis',
-    status: selectedSlot ? 'scheduled' : statusMap[rally.status],
-    selectedSlot,
+    status: persistedSlot && rally.status === 'ACCEPTED' ? 'scheduled' : statusMap[rally.status],
+    selectedSlot: persistedSlot,
     venue,
     bookingStatus: bookingStatusMap[rally.courtStatus],
     bookingOwnerId: rally.bookingOwnerId,
@@ -270,7 +274,22 @@ function toAvailabilitySlot(window: { dayOfWeek: number; startTime: string }): A
   };
 }
 
-function timeBlock(time: string) {
+function toScheduleOptionFromRally(rally: ApiRallyEnvelope, venue: Venue): ScheduleOption {
+  const start = new Date(rally.proposedStartAt);
+  const slot = {
+    day: (['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const)[start.getDay()],
+    block: timeBlock(start.toISOString().slice(11, 16)),
+  };
+
+  return {
+    slot,
+    date: start.toISOString().slice(0, 10),
+    overlapQuality: slot.block === 'evening' ? 1 : slot.block === 'afternoon' ? 0.8 : 0.6,
+    venue,
+  };
+}
+
+function timeBlock(time: string): TimeBlock {
   const hour = Number(time.split(':')[0]);
   if (hour < 12) return 'morning';
   if (hour < 17) return 'afternoon';

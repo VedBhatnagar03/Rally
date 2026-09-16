@@ -4,6 +4,29 @@ import { rallyFeedbackSchema } from "../modules/feedback/schemas.js";
 import { writeAuditLog } from "../utils/audit.js";
 
 export async function feedbackRoutes(app: FastifyInstance) {
+  app.get("/rallies/:rallyId/outcome", { preHandler: app.authenticate }, async (request, reply) => {
+    const params = request.params as { rallyId: string };
+
+    const rally = await prisma.rally.findUnique({
+      where: { id: params.rallyId },
+      include: { feedback: true }
+    });
+
+    if (!rally || (rally.senderId !== request.user.sub && rally.receiverId !== request.user.sub)) {
+      return reply.code(404).send({ error: "Rally not found" });
+    }
+
+    const bothResponded = rally.feedback.length >= 2;
+
+    return {
+      outcome: {
+        rallyId: rally.id,
+        bothResponded,
+        isMutualMatch: bothResponded && rally.feedback.every((feedback) => feedback.rallyAgain)
+      }
+    };
+  });
+
   app.post("/rallies/:rallyId", { preHandler: app.authenticate }, async (request, reply) => {
     const params = request.params as { rallyId: string };
     const body = rallyFeedbackSchema.parse(request.body);

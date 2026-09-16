@@ -19,6 +19,12 @@ export const courtBookingSchema = z.object({
   bookingReference: z.string().trim().max(160).optional()
 });
 
+export const selectScheduleSchema = z.object({
+  proposedStartAt: z.coerce.date(),
+  proposedEndAt: z.coerce.date(),
+  venueId: z.string().cuid()
+});
+
 export const scheduleSuggestionParamsSchema = z.object({
   receiverId: z.string().cuid()
 });

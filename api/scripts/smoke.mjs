@@ -35,6 +35,18 @@ function assertStatus(name, actual, expected) {
   }
 }
 
+function nextDateForDay(dayOfWeek) {
+  const now = new Date();
+  const delta = (dayOfWeek - now.getDay() + 7) % 7 || 7;
+  const result = new Date(now);
+  result.setDate(now.getDate() + delta);
+  return result.toISOString().slice(0, 10);
+}
+
+function dateTimeForSuggestion(suggestion, time) {
+  return `${nextDateForDay(suggestion.dayOfWeek)}T${time}:00.000Z`;
+}
+
 async function createVerifiedUser(prefix) {
   const email = `${prefix}.${Date.now()}@illinois.edu`;
   const registration = await post("/v1/auth/register", {
@@ -141,6 +153,73 @@ if (!Array.isArray(suggestions.body.suggestions) || suggestions.body.suggestions
   throw new Error("schedule suggestions: expected at least one viable slot");
 }
 
+const selectedSuggestion = suggestions.body.suggestions[0];
+
+const rally = await post(
+  "/v1/rallies",
+  {
+    receiverId: schedulerB.user.id,
+    sport: "TENNIS",
+    proposedStartAt: new Date(Date.now() + 86_400_000).toISOString(),
+    proposedEndAt: new Date(Date.now() + 90_000_000).toISOString()
+  },
+  schedulerA.token
+);
+assertStatus("create persisted rally", rally.status, 201);
+
+const accepted = await post(
+  `/v1/rallies/${rally.body.rally.id}/respond`,
+  { status: "ACCEPTED" },
+  schedulerB.token
+);
+assertStatus("accept persisted rally", accepted.status, 200);
+
+const scheduled = await post(
+  `/v1/rallies/${rally.body.rally.id}/schedule`,
+  {
+    proposedStartAt: dateTimeForSuggestion(selectedSuggestion, selectedSuggestion.startTime),
+    proposedEndAt: dateTimeForSuggestion(selectedSuggestion, selectedSuggestion.endTime),
+    venueId: selectedSuggestion.venue.id
+  },
+  schedulerA.token
+);
+assertStatus("select persisted schedule", scheduled.status, 200);
+
+if (scheduled.body.rally.venueId !== selectedSuggestion.venue.id) {
+  throw new Error("select persisted schedule: expected venue to persist");
+}
+
+const booked = await post(
+  `/v1/rallies/${rally.body.rally.id}/court-booking`,
+  { courtStatus: "BOOKED", bookingReference: "smoke-test-booking" },
+  schedulerA.token
+);
+assertStatus("persist court booking", booked.status, 200);
+
+const completed = await post(`/v1/rallies/${rally.body.rally.id}/complete`, {}, schedulerA.token);
+assertStatus("complete persisted rally", completed.status, 200);
+
+const feedbackA = await post(
+  `/v1/feedback/rallies/${rally.body.rally.id}`,
+  { played: true, feltSafe: true, rallyAgain: true, experienceScore: 5 },
+  schedulerA.token
+);
+assertStatus("submit first feedback", feedbackA.status, 200);
+
+const feedbackB = await post(
+  `/v1/feedback/rallies/${rally.body.rally.id}`,
+  { played: true, feltSafe: true, rallyAgain: true, experienceScore: 5 },
+  schedulerB.token
+);
+assertStatus("submit second feedback", feedbackB.status, 200);
+
+const outcome = await get(`/v1/feedback/rallies/${rally.body.rally.id}/outcome`, schedulerA.token);
+assertStatus("read rally outcome", outcome.status, 200);
+
+if (!outcome.body.outcome.bothResponded || !outcome.body.outcome.isMutualMatch) {
+  throw new Error("read rally outcome: expected mutual match after two yes feedback entries");
+}
+
 console.log(JSON.stringify({
   ok: true,
   checks: [
@@ -150,6 +229,8 @@ console.log(JSON.stringify({
     "admin authorization",
     "normal admin rejection",
     "block enforcement",
-    "schedule suggestions"
+    "schedule suggestions",
+    "persisted rally lifecycle",
+    "persisted feedback outcome"
   ]
 }, null, 2));
