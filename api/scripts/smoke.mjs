@@ -110,6 +110,26 @@ const adminLogin = await post("/v1/auth/login", {
 });
 assertStatus("admin login", adminLogin.status, 200);
 
+const refreshedAdmin = await post("/v1/auth/refresh", {
+  refreshToken: adminLogin.body.refreshToken
+});
+assertStatus("refresh session", refreshedAdmin.status, 200);
+
+const replayedRefresh = await post("/v1/auth/refresh", {
+  refreshToken: adminLogin.body.refreshToken
+});
+assertStatus("reject refresh replay", replayedRefresh.status, 401);
+
+const logout = await post("/v1/auth/logout", {
+  refreshToken: refreshedAdmin.body.refreshToken
+});
+assertStatus("logout session", logout.status, 204);
+
+const loggedOutRefresh = await post("/v1/auth/refresh", {
+  refreshToken: refreshedAdmin.body.refreshToken
+});
+assertStatus("reject logged-out refresh", loggedOutRefresh.status, 401);
+
 const normal = await createVerifiedUser("normal");
 const other = await createVerifiedUser("other");
 const schedulerA = await createVerifiedUser("schedulerA");
@@ -226,6 +246,8 @@ console.log(JSON.stringify({
     "health",
     "ready",
     "non-UIUC rejection",
+    "refresh rotation and replay rejection",
+    "logout revocation",
     "admin authorization",
     "normal admin rejection",
     "block enforcement",

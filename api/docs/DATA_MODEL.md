@@ -4,7 +4,7 @@
 
 - `User`: login identity, UIUC email, password hash, verification status, admin role.
 - `EmailVerificationToken`: hash-only email verification tokens.
-- `RefreshToken`: future hash-only refresh-token storage.
+- `RefreshToken`: hash-only, rotating session tokens with expiry and revocation.
 - `Profile`: dating and campus profile.
 - `Photo`: user photo metadata.
 - `SportProfile`: per-sport skill, intensity, and favorite flags.

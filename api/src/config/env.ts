@@ -8,6 +8,7 @@ const envSchema = z.object({
   REDIS_URL: z.string().url().optional(),
   JWT_SECRET: z.string().min(32),
   JWT_EXPIRES_IN: z.string().default("15m"),
+  REFRESH_TOKEN_DAYS: z.coerce.number().int().min(1).max(90).default(30),
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
   ADMIN_EMAILS: z.string().default(""),

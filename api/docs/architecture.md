@@ -6,7 +6,7 @@ Rally does not scrape or automate Active Illini. The backend suggests the best s
 
 ## Core Domains
 
-- Auth: UIUC-only registration, email verification, login, JWT issuance.
+- Auth: UIUC-only registration, email verification, login, short-lived JWT issuance, rotating refresh tokens and logout revocation.
 - Profile: campus identity, dating intent, gender preferences, trust profile.
 - Sports: racket sport interests, skill, intensity, favorites.
 - Availability: weekly time windows used by the matching engine.
@@ -22,6 +22,7 @@ Rally does not scrape or automate Active Illini. The backend suggests the best s
 3. Route handlers use Prisma for database operations.
 4. Security-sensitive events write to `AuditLog`.
 5. Responses avoid returning password hashes, token hashes, and internal secrets.
+6. Protected requests re-check active user status so suspension takes effect immediately.
 
 ## Matching V1
 
