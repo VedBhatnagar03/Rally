@@ -43,6 +43,15 @@ export function buildApp() {
       return reply.code(409).send({ error: "Resource already exists" });
     }
 
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "statusCode" in error &&
+      error.statusCode === 429
+    ) {
+      return reply.code(429).send({ error: "Rate limit exceeded" });
+    }
+
     app.log.error(error);
     return reply.code(500).send({ error: "Internal server error" });
   });

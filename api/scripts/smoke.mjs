@@ -47,7 +47,7 @@ function dateTimeForSuggestion(suggestion, time) {
   return `${nextDateForDay(suggestion.dayOfWeek)}T${time}:00.000Z`;
 }
 
-async function createVerifiedUser(prefix) {
+async function createVerifiedUser(prefix, testResend = false) {
   const email = `${prefix}.${Date.now()}@illinois.edu`;
   const registration = await post("/v1/auth/register", {
     email,
@@ -56,8 +56,20 @@ async function createVerifiedUser(prefix) {
   });
   assertStatus(`${prefix} register`, registration.status, 201);
 
+  let verificationToken = registration.body.devVerificationToken;
+  if (testResend) {
+    const resent = await post("/v1/auth/resend-verification", { email });
+    assertStatus(`${prefix} resend verification`, resent.status, 202);
+
+    const invalidated = await post("/v1/auth/verify-email", {
+      token: registration.body.devVerificationToken
+    });
+    assertStatus(`${prefix} reject superseded verification`, invalidated.status, 400);
+    verificationToken = resent.body.devVerificationToken;
+  }
+
   const verification = await post("/v1/auth/verify-email", {
-    token: registration.body.devVerificationToken
+    token: verificationToken
   });
   assertStatus(`${prefix} verify`, verification.status, 200);
 
@@ -130,7 +142,7 @@ const loggedOutRefresh = await post("/v1/auth/refresh", {
 });
 assertStatus("reject logged-out refresh", loggedOutRefresh.status, 401);
 
-const normal = await createVerifiedUser("normal");
+const normal = await createVerifiedUser("normal", true);
 const other = await createVerifiedUser("other");
 const schedulerA = await createVerifiedUser("schedulerA");
 const schedulerB = await createVerifiedUser("schedulerB");
@@ -246,6 +258,7 @@ console.log(JSON.stringify({
     "health",
     "ready",
     "non-UIUC rejection",
+    "verification resend and superseded-token rejection",
     "refresh rotation and replay rejection",
     "logout revocation",
     "admin authorization",

@@ -5,6 +5,7 @@ import {
   loginSchema,
   refreshSessionSchema,
   registerSchema,
+  resendVerificationSchema,
   verifyEmailSchema
 } from "../modules/auth/schemas.js";
 import { env } from "../config/env.js";
@@ -12,6 +13,7 @@ import { writeAuditLog } from "../utils/audit.js";
 import { assertUiucEmail, normalizeEmail } from "../utils/email.js";
 import { hashPassword, verifyPassword } from "../utils/password.js";
 import { createOpaqueToken, hashToken } from "../utils/tokens.js";
+import { sendVerificationEmail } from "../utils/verification-email.js";
 
 export async function authRoutes(app: FastifyInstance) {
   async function issueSession(user: { id: string; email: string; role: "USER" | "ADMIN" }) {
@@ -65,12 +67,62 @@ export async function authRoutes(app: FastifyInstance) {
       request
     });
 
+    await sendVerificationEmail({
+      email: user.email,
+      token: verificationToken,
+      idempotencyKey: `verify-registration/${user.id}`
+    });
+
     return reply.code(201).send({
       user,
       emailVerificationRequired: true,
       devVerificationToken: env.NODE_ENV === "production" ? undefined : verificationToken
     });
   });
+
+  app.post(
+    "/resend-verification",
+    { config: { rateLimit: { max: 3, timeWindow: "1 hour" } } },
+    async (request, reply) => {
+      const body = resendVerificationSchema.parse(request.body);
+      const email = normalizeEmail(body.email);
+      const user = await prisma.user.findUnique({
+        where: { email },
+        select: { id: true, email: true, status: true }
+      });
+
+      let devVerificationToken: string | undefined;
+      if (user?.status === "PENDING_EMAIL_VERIFICATION") {
+        const token = createOpaqueToken();
+        const created = await prisma.$transaction(async (tx) => {
+          await tx.emailVerificationToken.updateMany({
+            where: { userId: user.id, consumedAt: null },
+            data: { consumedAt: new Date() }
+          });
+          return tx.emailVerificationToken.create({
+            data: {
+              userId: user.id,
+              tokenHash: hashToken(token),
+              expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
+            }
+          });
+        });
+
+        await sendVerificationEmail({
+          email: user.email,
+          token,
+          idempotencyKey: `verify-resend/${created.id}`
+        });
+        await writeAuditLog({ userId: user.id, action: "auth.resend_verification", request });
+        devVerificationToken = env.NODE_ENV === "production" ? undefined : token;
+      }
+
+      return reply.code(202).send({
+        message: "If an unverified Rally account exists, a verification email has been sent.",
+        devVerificationToken
+      });
+    }
+  );
 
   app.post("/verify-email", async (request, reply) => {
     const body = verifyEmailSchema.parse(request.body);
