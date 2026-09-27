@@ -28,7 +28,7 @@ export type ApiSport =
 type ApiSkill = 'BEGINNER' | 'CASUAL' | 'INTERMEDIATE' | 'ADVANCED' | 'COMPETITIVE';
 type ApiGender = 'WOMAN' | 'MAN' | 'NON_BINARY' | 'SELF_DESCRIBE' | 'PREFER_NOT_TO_SAY';
 type ApiDatingIntent = 'DATING' | 'FRIENDS' | 'CASUAL_PLAY' | 'COMPETITIVE';
-type ApiRallyStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'CANCELLED' | 'COMPLETED';
+type ApiRallyStatus = 'PENDING' | 'ACCEPTED' | 'SCHEDULED' | 'DECLINED' | 'CANCELLED' | 'COMPLETED';
 type ApiCourtStatus = 'NOT_STARTED' | 'NEEDS_USER_ACTION' | 'BOOKED' | 'UNAVAILABLE';
 
 export interface ApiProfileEnvelope {
@@ -154,6 +154,7 @@ const intentMap: Record<ApiDatingIntent, DatingIntent> = {
 const statusMap: Record<ApiRallyStatus, RallyStatus> = {
   PENDING: 'accepted',
   ACCEPTED: 'accepted',
+  SCHEDULED: 'scheduled',
   DECLINED: 'closed',
   CANCELLED: 'closed',
   COMPLETED: 'completed',
@@ -243,7 +244,7 @@ export function toRally(
     requestId: rally.id,
     participantIds: [rally.senderId, rally.receiverId],
     sport: fromApiSport(rally.sport) ?? 'tennis',
-    status: persistedSlot && rally.status === 'ACCEPTED' ? 'scheduled' : statusMap[rally.status],
+    status: statusMap[rally.status],
     selectedSlot: persistedSlot,
     venue,
     bookingStatus: bookingStatusMap[rally.courtStatus],
@@ -288,7 +289,7 @@ export function toScheduleOption(input: {
 
 function toRequestStatus(status: ApiRallyStatus): RallyRequestStatus {
   if (status === 'DECLINED') return 'declined';
-  if (status === 'ACCEPTED' || status === 'COMPLETED') return 'accepted';
+  if (status === 'ACCEPTED' || status === 'SCHEDULED' || status === 'COMPLETED') return 'accepted';
   return 'pending';
 }
 

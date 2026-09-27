@@ -37,8 +37,8 @@ export async function feedbackRoutes(app: FastifyInstance) {
       return reply.code(404).send({ error: "Rally not found" });
     }
 
-    if (rally.status !== "ACCEPTED" && rally.status !== "COMPLETED") {
-      return reply.code(409).send({ error: "Feedback can only be submitted after an accepted Rally" });
+    if (rally.status !== "COMPLETED") {
+      return reply.code(409).send({ error: "Feedback can only be submitted after a completed Rally" });
     }
 
     const feedback = await prisma.rallyFeedback.upsert({

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/prisma.js";
 import {
+  cancelRallySchema,
   courtBookingSchema,
   createRallySchema,
   respondToRallySchema,
@@ -9,6 +10,7 @@ import {
 } from "../modules/rallies/schemas.js";
 import { suggestRallySlots } from "../modules/scheduling/scheduler.js";
 import { passesHardFilters } from "../modules/matching/matcher.js";
+import { writeAuditLog } from "../utils/audit.js";
 
 export async function rallyRoutes(app: FastifyInstance) {
   app.get("/", { preHandler: app.authenticate }, async (request) => {
@@ -173,7 +175,7 @@ export async function rallyRoutes(app: FastifyInstance) {
       where: { id: rally.id },
       data: {
         status: body.status,
-        courtStatus: body.status === "ACCEPTED" ? "NEEDS_USER_ACTION" : "NOT_STARTED"
+        courtStatus: "NOT_STARTED"
       },
       include: { venue: true }
     });
@@ -207,6 +209,7 @@ export async function rallyRoutes(app: FastifyInstance) {
     const updated = await prisma.rally.update({
       where: { id: rally.id },
       data: {
+        status: "SCHEDULED",
         proposedStartAt: body.proposedStartAt,
         proposedEndAt: body.proposedEndAt,
         venueId: body.venueId,
@@ -228,8 +231,8 @@ export async function rallyRoutes(app: FastifyInstance) {
       return reply.code(404).send({ error: "Rally not found" });
     }
 
-    if (rally.status !== "ACCEPTED") {
-      return reply.code(409).send({ error: "Court booking can only be updated after acceptance" });
+    if (rally.status !== "SCHEDULED") {
+      return reply.code(409).send({ error: "Court booking can only be updated after scheduling" });
     }
 
     const updated = await prisma.rally.update({
@@ -254,14 +257,49 @@ export async function rallyRoutes(app: FastifyInstance) {
       return reply.code(404).send({ error: "Rally not found" });
     }
 
-    if (rally.status !== "ACCEPTED" && rally.status !== "COMPLETED") {
-      return reply.code(409).send({ error: "Only accepted Rallies can be completed" });
+    if (rally.status !== "SCHEDULED" && rally.status !== "COMPLETED") {
+      return reply.code(409).send({ error: "Only scheduled Rallies can be completed" });
     }
 
     const updated = await prisma.rally.update({
       where: { id: rally.id },
       data: { status: "COMPLETED" },
       include: { venue: true }
+    });
+
+    return { rally: updated };
+  });
+
+  app.post("/:rallyId/cancel", { preHandler: app.authenticate }, async (request, reply) => {
+    const params = request.params as { rallyId: string };
+    const body = cancelRallySchema.parse(request.body);
+    const rally = await prisma.rally.findUnique({ where: { id: params.rallyId } });
+
+    if (!rally || (rally.senderId !== request.user.sub && rally.receiverId !== request.user.sub)) {
+      return reply.code(404).send({ error: "Rally not found" });
+    }
+
+    if (!["PENDING", "ACCEPTED", "SCHEDULED"].includes(rally.status)) {
+      return reply.code(409).send({ error: "Rally can no longer be cancelled" });
+    }
+
+    const updated = await prisma.rally.update({
+      where: { id: rally.id },
+      data: {
+        status: "CANCELLED",
+        cancelledAt: new Date(),
+        cancelledById: request.user.sub,
+        cancellationReason: body.reason,
+        courtStatus: "NOT_STARTED"
+      },
+      include: { venue: true }
+    });
+
+    await writeAuditLog({
+      userId: request.user.sub,
+      action: "rally.cancel",
+      metadata: { rallyId: rally.id },
+      request
     });
 
     return { rally: updated };

@@ -8,6 +8,7 @@ export async function adminRoutes(app: FastifyInstance) {
       completeProfiles,
       ralliesSent,
       acceptedRallies,
+      scheduledRallies,
       completedRallies,
       mutualRallyAgain,
       openReports
@@ -16,6 +17,7 @@ export async function adminRoutes(app: FastifyInstance) {
       prisma.profile.count({ where: { profileComplete: true } }),
       prisma.rally.count(),
       prisma.rally.count({ where: { status: "ACCEPTED" } }),
+      prisma.rally.count({ where: { status: "SCHEDULED" } }),
       prisma.rally.count({ where: { status: "COMPLETED" } }),
       prisma.rally.count({
         where: {
@@ -34,6 +36,7 @@ export async function adminRoutes(app: FastifyInstance) {
         completeProfiles,
         ralliesSent,
         acceptedRallies,
+        scheduledRallies,
         completedRallies,
         mutualRallyAgain,
         openReports

@@ -25,6 +25,10 @@ export const selectScheduleSchema = z.object({
   venueId: z.string().cuid()
 });
 
+export const cancelRallySchema = z.object({
+  reason: z.string().trim().min(1).max(280).optional()
+});
+
 export const scheduleSuggestionParamsSchema = z.object({
   receiverId: z.string().cuid()
 });

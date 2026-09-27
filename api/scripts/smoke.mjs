@@ -239,6 +239,9 @@ assertStatus("select persisted schedule", scheduled.status, 200);
 if (scheduled.body.rally.venueId !== selectedSuggestion.venue.id) {
   throw new Error("select persisted schedule: expected venue to persist");
 }
+if (scheduled.body.rally.status !== "SCHEDULED") {
+  throw new Error("select persisted schedule: expected explicit SCHEDULED state");
+}
 
 const booked = await post(
   `/v1/rallies/${rally.body.rally.id}/court-booking`,
@@ -271,6 +274,39 @@ if (!outcome.body.outcome.bothResponded || !outcome.body.outcome.isMutualMatch) 
   throw new Error("read rally outcome: expected mutual match after two yes feedback entries");
 }
 
+const cancellable = await post(
+  "/v1/rallies",
+  {
+    receiverId: schedulerB.user.id,
+    sport: "TENNIS",
+    proposedStartAt: new Date(Date.now() + 172_800_000).toISOString(),
+    proposedEndAt: new Date(Date.now() + 176_400_000).toISOString()
+  },
+  schedulerA.token
+);
+assertStatus("create cancellable rally", cancellable.status, 201);
+
+const cancelled = await post(
+  `/v1/rallies/${cancellable.body.rally.id}/cancel`,
+  { reason: "Plans changed" },
+  schedulerA.token
+);
+assertStatus("cancel rally", cancelled.status, 200);
+if (
+  cancelled.body.rally.status !== "CANCELLED" ||
+  cancelled.body.rally.cancelledById !== schedulerA.user.id ||
+  cancelled.body.rally.cancellationReason !== "Plans changed"
+) {
+  throw new Error("cancel rally: expected status, actor, and reason to persist");
+}
+
+const acceptCancelled = await post(
+  `/v1/rallies/${cancellable.body.rally.id}/respond`,
+  { status: "ACCEPTED" },
+  schedulerB.token
+);
+assertStatus("reject cancelled rally transition", acceptCancelled.status, 409);
+
 console.log(JSON.stringify({
   ok: true,
   checks: [
@@ -286,6 +322,7 @@ console.log(JSON.stringify({
     "mutual filters and explainable recommendations",
     "schedule suggestions",
     "persisted rally lifecycle",
+    "explicit scheduling and cancellation states",
     "persisted feedback outcome"
   ]
 }, null, 2));

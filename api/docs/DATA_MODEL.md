@@ -10,7 +10,7 @@
 - `SportProfile`: per-sport skill, intensity, and favorite flags.
 - `AvailabilityWindow`: recurring weekly availability.
 - `Venue`: UIUC-compatible court locations and handoff links.
-- `Rally`: invite and real-world meetup state.
+- `Rally`: explicit pending, accepted, scheduled, completed/cancelled meetup state with cancellation attribution.
 - `RallyFeedback`: private post-Rally feedback.
 - `Block`: immediate discovery and interaction exclusion.
 - `Report`: safety/moderation queue.
