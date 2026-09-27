@@ -39,16 +39,16 @@ export async function recommendationRoutes(app: FastifyInstance) {
           {
             userId: currentUser.id,
             displayName: currentProfile.displayName,
+            profile: currentProfile,
             sports: currentUser.sportProfiles,
-            availability: currentUser.availability,
-            trustScore: currentProfile.trustScore
+            availability: currentUser.availability
           },
           {
             userId: candidate.id,
             displayName: candidate.profile.displayName,
+            profile: candidate.profile,
             sports: candidate.sportProfiles,
-            availability: candidate.availability,
-            trustScore: candidate.profile.trustScore
+            availability: candidate.availability
           }
         );
 

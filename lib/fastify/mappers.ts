@@ -84,6 +84,25 @@ export interface ApiRallyEnvelope {
   venue?: ApiVenueEnvelope | null;
 }
 
+export interface ApiRecommendationEnvelope {
+  userId: string;
+  displayName: string;
+  recommendedSport: ApiSport;
+  score: number;
+  sharedSports?: ApiSport[];
+  reasons?: Array<{
+    kind: 'sport' | 'skill' | 'schedule' | 'intent' | 'interests';
+    text: string;
+  }>;
+  breakdown?: Array<{
+    label: string;
+    weight: number;
+    raw: number;
+    weighted: number;
+    detail: string;
+  }>;
+}
+
 const sportMap: Record<ApiSport, SportId | null> = {
   TENNIS: 'tennis',
   PICKLEBALL: 'pickleball',
@@ -234,15 +253,19 @@ export function toRally(
 }
 
 export function toCandidateMatch(
-  rec: { userId: string; displayName: string; recommendedSport: ApiSport; score: number },
+  rec: ApiRecommendationEnvelope,
   user: UserProfile,
 ): CandidateMatch {
   const sport = fromApiSport(rec.recommendedSport);
   return {
     user,
     score: rec.score / 100,
-    reasons: sport ? [{ kind: 'sport', text: `Recommended for ${sport}` }] : [],
-    sharedSports: sport ? [sport] : [],
+    reasons: rec.reasons ?? (sport ? [{ kind: 'sport', text: `Recommended for ${sport}` }] : []),
+    sharedSports: rec.sharedSports?.flatMap((item) => {
+      const mapped = fromApiSport(item);
+      return mapped ? [mapped] : [];
+    }) ?? (sport ? [sport] : []),
+    breakdown: rec.breakdown,
   };
 }
 

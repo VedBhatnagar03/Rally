@@ -16,6 +16,7 @@ import type {
 import type { RallyApi } from '@/lib/api';
 import {
   type ApiProfileEnvelope,
+  type ApiRecommendationEnvelope,
   type ApiRallyEnvelope,
   type ApiSport,
   toApiSport,
@@ -112,12 +113,7 @@ export const fastifyApi: RallyApi = {
   async getCandidates(userId: string) {
     try {
       const body = await authed<{
-        recommendations: Array<{
-          userId: string;
-          displayName: string;
-          recommendedSport: ApiSport;
-          score: number;
-        }>;
+        recommendations: ApiRecommendationEnvelope[];
       }>(userId, '/v1/recommendations');
 
       const matches: CandidateMatch[] = [];

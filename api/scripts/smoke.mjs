@@ -85,6 +85,10 @@ async function completeProfile(userSession, displayName, availability) {
       major: "Information Sciences",
       classYear: "Junior",
       bio: "Smoke-test profile for Rally beta verification.",
+      age: 21,
+      preferredAgeMin: 18,
+      preferredAgeMax: 30,
+      gender: "PREFER_NOT_TO_SAY",
       datingIntent: "DATING",
       interestedIn: [],
       campusZone: "Main Quad",
@@ -149,6 +153,21 @@ const schedulerB = await createVerifiedUser("schedulerB");
 
 await completeProfile(schedulerA, "Scheduler A", [{ dayOfWeek: 2, startTime: "17:00", endTime: "20:00" }]);
 await completeProfile(schedulerB, "Scheduler B", [{ dayOfWeek: 2, startTime: "18:00", endTime: "21:00" }]);
+
+const recommendations = await get("/v1/recommendations", schedulerA.token);
+assertStatus("explainable recommendations", recommendations.status, 200);
+const schedulerRecommendation = recommendations.body.recommendations.find(
+  (candidate) => candidate.userId === schedulerB.user.id
+);
+if (
+  !schedulerRecommendation ||
+  !Array.isArray(schedulerRecommendation.reasons) ||
+  schedulerRecommendation.reasons.length === 0 ||
+  !Array.isArray(schedulerRecommendation.breakdown) ||
+  schedulerRecommendation.breakdown.length !== 5
+) {
+  throw new Error("explainable recommendations: expected reasons and five score components");
+}
 
 const adminSummary = await get("/v1/admin/summary", adminLogin.body.token);
 assertStatus("admin summary", adminSummary.status, 200);
@@ -264,6 +283,7 @@ console.log(JSON.stringify({
     "admin authorization",
     "normal admin rejection",
     "block enforcement",
+    "mutual filters and explainable recommendations",
     "schedule suggestions",
     "persisted rally lifecycle",
     "persisted feedback outcome"

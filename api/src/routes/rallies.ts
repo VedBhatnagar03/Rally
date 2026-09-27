@@ -8,6 +8,7 @@ import {
   selectScheduleSchema
 } from "../modules/rallies/schemas.js";
 import { suggestRallySlots } from "../modules/scheduling/scheduler.js";
+import { passesHardFilters } from "../modules/matching/matcher.js";
 
 export async function rallyRoutes(app: FastifyInstance) {
   app.get("/", { preHandler: app.authenticate }, async (request) => {
@@ -37,7 +38,16 @@ export async function rallyRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "Rally end time must be after start time" });
     }
 
-    const receiver = await prisma.user.findUnique({ where: { id: body.receiverId } });
+    const [sender, receiver] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: request.user.sub },
+        include: { profile: true, sportProfiles: true, availability: true }
+      }),
+      prisma.user.findUnique({
+        where: { id: body.receiverId },
+        include: { profile: true, sportProfiles: true, availability: true }
+      })
+    ]);
     if (!receiver || receiver.status !== "ACTIVE") {
       return reply.code(404).send({ error: "Receiver not found" });
     }
@@ -52,6 +62,31 @@ export async function rallyRoutes(app: FastifyInstance) {
     });
 
     if (block) {
+      return reply.code(403).send({ error: "Rally unavailable" });
+    }
+
+    if (
+      !sender?.profile ||
+      !receiver.profile ||
+      !passesHardFilters(
+        {
+          userId: sender.id,
+          displayName: sender.profile.displayName,
+          profile: sender.profile,
+          sports: sender.sportProfiles,
+          availability: sender.availability
+        },
+        {
+          userId: receiver.id,
+          displayName: receiver.profile.displayName,
+          profile: receiver.profile,
+          sports: receiver.sportProfiles,
+          availability: receiver.availability
+        }
+      ) ||
+      !sender.sportProfiles.some(({ sport }) => sport === body.sport) ||
+      !receiver.sportProfiles.some(({ sport }) => sport === body.sport)
+    ) {
       return reply.code(403).send({ error: "Rally unavailable" });
     }
 
