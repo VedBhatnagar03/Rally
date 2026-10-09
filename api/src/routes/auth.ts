@@ -1,14 +1,36 @@
 import type { FastifyInstance } from "fastify";
 import { adminEmails } from "../config/env.js";
 import { prisma } from "../db/prisma.js";
-import { loginSchema, registerSchema, verifyEmailSchema } from "../modules/auth/schemas.js";
+import {
+  loginSchema,
+  refreshSessionSchema,
+  registerSchema,
+  resendVerificationSchema,
+  verifyEmailSchema
+} from "../modules/auth/schemas.js";
 import { env } from "../config/env.js";
 import { writeAuditLog } from "../utils/audit.js";
 import { assertUiucEmail, normalizeEmail } from "../utils/email.js";
 import { hashPassword, verifyPassword } from "../utils/password.js";
 import { createOpaqueToken, hashToken } from "../utils/tokens.js";
+import { sendVerificationEmail } from "../utils/verification-email.js";
 
 export async function authRoutes(app: FastifyInstance) {
+  async function issueSession(user: { id: string; email: string; role: "USER" | "ADMIN" }) {
+    const accessToken = app.jwt.sign({ sub: user.id, email: user.email, role: user.role });
+    const refreshToken = createOpaqueToken();
+
+    await prisma.refreshToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: hashToken(refreshToken),
+        expiresAt: new Date(Date.now() + env.REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000)
+      }
+    });
+
+    return { token: accessToken, accessToken, refreshToken, user };
+  }
+
   app.post("/register", async (request, reply) => {
     const body = registerSchema.parse(request.body);
     const email = assertUiucEmail(body.email);
@@ -45,12 +67,62 @@ export async function authRoutes(app: FastifyInstance) {
       request
     });
 
+    await sendVerificationEmail({
+      email: user.email,
+      token: verificationToken,
+      idempotencyKey: `verify-registration/${user.id}`
+    });
+
     return reply.code(201).send({
       user,
       emailVerificationRequired: true,
       devVerificationToken: env.NODE_ENV === "production" ? undefined : verificationToken
     });
   });
+
+  app.post(
+    "/resend-verification",
+    { config: { rateLimit: { max: 3, timeWindow: "1 hour" } } },
+    async (request, reply) => {
+      const body = resendVerificationSchema.parse(request.body);
+      const email = normalizeEmail(body.email);
+      const user = await prisma.user.findUnique({
+        where: { email },
+        select: { id: true, email: true, status: true }
+      });
+
+      let devVerificationToken: string | undefined;
+      if (user?.status === "PENDING_EMAIL_VERIFICATION") {
+        const token = createOpaqueToken();
+        const created = await prisma.$transaction(async (tx) => {
+          await tx.emailVerificationToken.updateMany({
+            where: { userId: user.id, consumedAt: null },
+            data: { consumedAt: new Date() }
+          });
+          return tx.emailVerificationToken.create({
+            data: {
+              userId: user.id,
+              tokenHash: hashToken(token),
+              expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
+            }
+          });
+        });
+
+        await sendVerificationEmail({
+          email: user.email,
+          token,
+          idempotencyKey: `verify-resend/${created.id}`
+        });
+        await writeAuditLog({ userId: user.id, action: "auth.resend_verification", request });
+        devVerificationToken = env.NODE_ENV === "production" ? undefined : token;
+      }
+
+      return reply.code(202).send({
+        message: "If an unverified Rally account exists, a verification email has been sent.",
+        devVerificationToken
+      });
+    }
+  );
 
   app.post("/verify-email", async (request, reply) => {
     const body = verifyEmailSchema.parse(request.body);
@@ -82,13 +154,11 @@ export async function authRoutes(app: FastifyInstance) {
       request
     });
 
-    const token = app.jwt.sign({
-      sub: verification.userId,
+    return issueSession({
+      id: verification.userId,
       email: verification.user.email,
       role: verification.user.role
     });
-
-    return { token, user: { id: verification.userId, email: verification.user.email, role: verification.user.role } };
   });
 
   app.post("/login", async (request, reply) => {
@@ -104,14 +174,81 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.code(403).send({ error: "Email verification required" });
     }
 
-    const token = app.jwt.sign({ sub: user.id, email: user.email, role: user.role });
-
     await writeAuditLog({
       userId: user.id,
       action: "auth.login",
       request
     });
 
-    return { token, user: { id: user.id, email: user.email, role: user.role } };
+    return issueSession({ id: user.id, email: user.email, role: user.role });
+  });
+
+  app.post("/refresh", async (request, reply) => {
+    const body = refreshSessionSchema.parse(request.body);
+    const currentHash = hashToken(body.refreshToken);
+    const current = await prisma.refreshToken.findUnique({
+      where: { tokenHash: currentHash },
+      include: { user: { select: { id: true, email: true, role: true, status: true } } }
+    });
+
+    if (!current || current.revokedAt || current.expiresAt <= new Date() || current.user.status !== "ACTIVE") {
+      return reply.code(401).send({ error: "Invalid or expired refresh token" });
+    }
+
+    const nextRefreshToken = createOpaqueToken();
+    const rotated = await prisma.$transaction(async (tx) => {
+      const revoked = await tx.refreshToken.updateMany({
+        where: { id: current.id, revokedAt: null },
+        data: { revokedAt: new Date() }
+      });
+
+      if (revoked.count !== 1) return false;
+
+      await tx.refreshToken.create({
+        data: {
+          userId: current.userId,
+          tokenHash: hashToken(nextRefreshToken),
+          expiresAt: new Date(Date.now() + env.REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000)
+        }
+      });
+      return true;
+    });
+
+    if (!rotated) {
+      return reply.code(401).send({ error: "Invalid or expired refresh token" });
+    }
+
+    const accessToken = app.jwt.sign({
+      sub: current.user.id,
+      email: current.user.email,
+      role: current.user.role
+    });
+
+    await writeAuditLog({ userId: current.user.id, action: "auth.refresh", request });
+
+    return {
+      token: accessToken,
+      accessToken,
+      refreshToken: nextRefreshToken,
+      user: { id: current.user.id, email: current.user.email, role: current.user.role }
+    };
+  });
+
+  app.post("/logout", async (request, reply) => {
+    const body = refreshSessionSchema.parse(request.body);
+    const session = await prisma.refreshToken.findUnique({
+      where: { tokenHash: hashToken(body.refreshToken) },
+      select: { id: true, userId: true, revokedAt: true }
+    });
+
+    if (session && !session.revokedAt) {
+      await prisma.refreshToken.update({
+        where: { id: session.id },
+        data: { revokedAt: new Date() }
+      });
+      await writeAuditLog({ userId: session.userId, action: "auth.logout", request });
+    }
+
+    return reply.code(204).send();
   });
 }

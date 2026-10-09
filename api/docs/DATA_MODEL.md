@@ -4,13 +4,13 @@
 
 - `User`: login identity, UIUC email, password hash, verification status, admin role.
 - `EmailVerificationToken`: hash-only email verification tokens.
-- `RefreshToken`: future hash-only refresh-token storage.
+- `RefreshToken`: hash-only, rotating session tokens with expiry and revocation.
 - `Profile`: dating and campus profile.
 - `Photo`: user photo metadata.
 - `SportProfile`: per-sport skill, intensity, and favorite flags.
 - `AvailabilityWindow`: recurring weekly availability.
 - `Venue`: UIUC-compatible court locations and handoff links.
-- `Rally`: invite and real-world meetup state.
+- `Rally`: explicit pending, accepted, scheduled, completed/cancelled meetup state with cancellation attribution.
 - `RallyFeedback`: private post-Rally feedback.
 - `Block`: immediate discovery and interaction exclusion.
 - `Report`: safety/moderation queue.

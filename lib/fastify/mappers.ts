@@ -12,6 +12,7 @@ import type {
   ScheduleOption,
   SkillLevel,
   SportId,
+  TimeBlock,
   UserProfile,
   Venue,
 } from '@/types';
@@ -27,7 +28,7 @@ export type ApiSport =
 type ApiSkill = 'BEGINNER' | 'CASUAL' | 'INTERMEDIATE' | 'ADVANCED' | 'COMPETITIVE';
 type ApiGender = 'WOMAN' | 'MAN' | 'NON_BINARY' | 'SELF_DESCRIBE' | 'PREFER_NOT_TO_SAY';
 type ApiDatingIntent = 'DATING' | 'FRIENDS' | 'CASUAL_PLAY' | 'COMPETITIVE';
-type ApiRallyStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'CANCELLED' | 'COMPLETED';
+type ApiRallyStatus = 'PENDING' | 'ACCEPTED' | 'SCHEDULED' | 'DECLINED' | 'CANCELLED' | 'COMPLETED';
 type ApiCourtStatus = 'NOT_STARTED' | 'NEEDS_USER_ACTION' | 'BOOKED' | 'UNAVAILABLE';
 
 export interface ApiProfileEnvelope {
@@ -39,6 +40,9 @@ export interface ApiProfileEnvelope {
     major: string | null;
     classYear: string | null;
     bio: string | null;
+    age: number | null;
+    preferredAgeMin: number;
+    preferredAgeMax: number;
     gender: ApiGender | null;
     datingIntent: ApiDatingIntent;
     interestedIn: ApiGender[];
@@ -78,6 +82,25 @@ export interface ApiRallyEnvelope {
   proposedEndAt: string;
   createdAt: string;
   venue?: ApiVenueEnvelope | null;
+}
+
+export interface ApiRecommendationEnvelope {
+  userId: string;
+  displayName: string;
+  recommendedSport: ApiSport;
+  score: number;
+  sharedSports?: ApiSport[];
+  reasons?: Array<{
+    kind: 'sport' | 'skill' | 'schedule' | 'intent' | 'interests';
+    text: string;
+  }>;
+  breakdown?: Array<{
+    label: string;
+    weight: number;
+    raw: number;
+    weighted: number;
+    detail: string;
+  }>;
 }
 
 const sportMap: Record<ApiSport, SportId | null> = {
@@ -131,6 +154,7 @@ const intentMap: Record<ApiDatingIntent, DatingIntent> = {
 const statusMap: Record<ApiRallyStatus, RallyStatus> = {
   PENDING: 'accepted',
   ACCEPTED: 'accepted',
+  SCHEDULED: 'scheduled',
   DECLINED: 'closed',
   CANCELLED: 'closed',
   COMPLETED: 'completed',
@@ -162,7 +186,7 @@ export function toUserProfile(user: ApiProfileEnvelope): UserProfile {
   return {
     id: user.id,
     firstName: displayName.split(/\s+/)[0] || displayName,
-    age: 18,
+    age: profile?.age ?? 18,
     year: profile?.classYear ?? 'UIUC',
     major: profile?.major ?? 'Undeclared',
     bio: profile?.bio ?? '',
@@ -174,8 +198,8 @@ export function toUserProfile(user: ApiProfileEnvelope): UserProfile {
         ? interestedInMap[profile.interestedIn[0]]
         : 'everyone',
       intent: profile?.datingIntent ? intentMap[profile.datingIntent] : 'open',
-      ageMin: 18,
-      ageMax: 30,
+      ageMin: profile?.preferredAgeMin ?? 18,
+      ageMax: profile?.preferredAgeMax ?? 30,
     },
     sports,
     availability: user.availability.map(toAvailabilitySlot),
@@ -212,13 +236,16 @@ export function toRally(
   selectedSlot: ScheduleOption | null = null,
 ): Rally {
   const venue = rally.venue ? toVenue(rally.venue) : (selectedSlot?.venue ?? null);
+  const persistedSlot =
+    selectedSlot ?? (venue ? toScheduleOptionFromRally(rally, venue) : null);
+
   return {
     id: rally.id,
     requestId: rally.id,
     participantIds: [rally.senderId, rally.receiverId],
     sport: fromApiSport(rally.sport) ?? 'tennis',
-    status: selectedSlot ? 'scheduled' : statusMap[rally.status],
-    selectedSlot,
+    status: statusMap[rally.status],
+    selectedSlot: persistedSlot,
     venue,
     bookingStatus: bookingStatusMap[rally.courtStatus],
     bookingOwnerId: rally.bookingOwnerId,
@@ -227,15 +254,19 @@ export function toRally(
 }
 
 export function toCandidateMatch(
-  rec: { userId: string; displayName: string; recommendedSport: ApiSport; score: number },
+  rec: ApiRecommendationEnvelope,
   user: UserProfile,
 ): CandidateMatch {
   const sport = fromApiSport(rec.recommendedSport);
   return {
     user,
     score: rec.score / 100,
-    reasons: sport ? [{ kind: 'sport', text: `Recommended for ${sport}` }] : [],
-    sharedSports: sport ? [sport] : [],
+    reasons: rec.reasons ?? (sport ? [{ kind: 'sport', text: `Recommended for ${sport}` }] : []),
+    sharedSports: rec.sharedSports?.flatMap((item) => {
+      const mapped = fromApiSport(item);
+      return mapped ? [mapped] : [];
+    }) ?? (sport ? [sport] : []),
+    breakdown: rec.breakdown,
   };
 }
 
@@ -258,7 +289,7 @@ export function toScheduleOption(input: {
 
 function toRequestStatus(status: ApiRallyStatus): RallyRequestStatus {
   if (status === 'DECLINED') return 'declined';
-  if (status === 'ACCEPTED' || status === 'COMPLETED') return 'accepted';
+  if (status === 'ACCEPTED' || status === 'SCHEDULED' || status === 'COMPLETED') return 'accepted';
   return 'pending';
 }
 
@@ -270,7 +301,22 @@ function toAvailabilitySlot(window: { dayOfWeek: number; startTime: string }): A
   };
 }
 
-function timeBlock(time: string) {
+function toScheduleOptionFromRally(rally: ApiRallyEnvelope, venue: Venue): ScheduleOption {
+  const start = new Date(rally.proposedStartAt);
+  const slot = {
+    day: (['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const)[start.getDay()],
+    block: timeBlock(start.toISOString().slice(11, 16)),
+  };
+
+  return {
+    slot,
+    date: start.toISOString().slice(0, 10),
+    overlapQuality: slot.block === 'evening' ? 1 : slot.block === 'afternoon' ? 0.8 : 0.6,
+    venue,
+  };
+}
+
+function timeBlock(time: string): TimeBlock {
   const hour = Number(time.split(':')[0]);
   if (hour < 12) return 'morning';
   if (hour < 17) return 'afternoon';

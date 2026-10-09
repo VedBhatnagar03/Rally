@@ -1,0 +1,6 @@
+ALTER TYPE "RallyStatus" ADD VALUE 'SCHEDULED' AFTER 'ACCEPTED';
+
+ALTER TABLE "Rally"
+ADD COLUMN "cancelledAt" TIMESTAMP(3),
+ADD COLUMN "cancelledById" TEXT,
+ADD COLUMN "cancellationReason" TEXT;

@@ -35,7 +35,19 @@ function assertStatus(name, actual, expected) {
   }
 }
 
-async function createVerifiedUser(prefix) {
+function nextDateForDay(dayOfWeek) {
+  const now = new Date();
+  const delta = (dayOfWeek - now.getDay() + 7) % 7 || 7;
+  const result = new Date(now);
+  result.setDate(now.getDate() + delta);
+  return result.toISOString().slice(0, 10);
+}
+
+function dateTimeForSuggestion(suggestion, time) {
+  return `${nextDateForDay(suggestion.dayOfWeek)}T${time}:00.000Z`;
+}
+
+async function createVerifiedUser(prefix, testResend = false) {
   const email = `${prefix}.${Date.now()}@illinois.edu`;
   const registration = await post("/v1/auth/register", {
     email,
@@ -44,8 +56,20 @@ async function createVerifiedUser(prefix) {
   });
   assertStatus(`${prefix} register`, registration.status, 201);
 
+  let verificationToken = registration.body.devVerificationToken;
+  if (testResend) {
+    const resent = await post("/v1/auth/resend-verification", { email });
+    assertStatus(`${prefix} resend verification`, resent.status, 202);
+
+    const invalidated = await post("/v1/auth/verify-email", {
+      token: registration.body.devVerificationToken
+    });
+    assertStatus(`${prefix} reject superseded verification`, invalidated.status, 400);
+    verificationToken = resent.body.devVerificationToken;
+  }
+
   const verification = await post("/v1/auth/verify-email", {
-    token: registration.body.devVerificationToken
+    token: verificationToken
   });
   assertStatus(`${prefix} verify`, verification.status, 200);
 
@@ -61,6 +85,10 @@ async function completeProfile(userSession, displayName, availability) {
       major: "Information Sciences",
       classYear: "Junior",
       bio: "Smoke-test profile for Rally beta verification.",
+      age: 21,
+      preferredAgeMin: 18,
+      preferredAgeMax: 30,
+      gender: "PREFER_NOT_TO_SAY",
       datingIntent: "DATING",
       interestedIn: [],
       campusZone: "Main Quad",
@@ -98,13 +126,48 @@ const adminLogin = await post("/v1/auth/login", {
 });
 assertStatus("admin login", adminLogin.status, 200);
 
-const normal = await createVerifiedUser("normal");
+const refreshedAdmin = await post("/v1/auth/refresh", {
+  refreshToken: adminLogin.body.refreshToken
+});
+assertStatus("refresh session", refreshedAdmin.status, 200);
+
+const replayedRefresh = await post("/v1/auth/refresh", {
+  refreshToken: adminLogin.body.refreshToken
+});
+assertStatus("reject refresh replay", replayedRefresh.status, 401);
+
+const logout = await post("/v1/auth/logout", {
+  refreshToken: refreshedAdmin.body.refreshToken
+});
+assertStatus("logout session", logout.status, 204);
+
+const loggedOutRefresh = await post("/v1/auth/refresh", {
+  refreshToken: refreshedAdmin.body.refreshToken
+});
+assertStatus("reject logged-out refresh", loggedOutRefresh.status, 401);
+
+const normal = await createVerifiedUser("normal", true);
 const other = await createVerifiedUser("other");
 const schedulerA = await createVerifiedUser("schedulerA");
 const schedulerB = await createVerifiedUser("schedulerB");
 
 await completeProfile(schedulerA, "Scheduler A", [{ dayOfWeek: 2, startTime: "17:00", endTime: "20:00" }]);
 await completeProfile(schedulerB, "Scheduler B", [{ dayOfWeek: 2, startTime: "18:00", endTime: "21:00" }]);
+
+const recommendations = await get("/v1/recommendations", schedulerA.token);
+assertStatus("explainable recommendations", recommendations.status, 200);
+const schedulerRecommendation = recommendations.body.recommendations.find(
+  (candidate) => candidate.userId === schedulerB.user.id
+);
+if (
+  !schedulerRecommendation ||
+  !Array.isArray(schedulerRecommendation.reasons) ||
+  schedulerRecommendation.reasons.length === 0 ||
+  !Array.isArray(schedulerRecommendation.breakdown) ||
+  schedulerRecommendation.breakdown.length !== 5
+) {
+  throw new Error("explainable recommendations: expected reasons and five score components");
+}
 
 const adminSummary = await get("/v1/admin/summary", adminLogin.body.token);
 assertStatus("admin summary", adminSummary.status, 200);
@@ -141,15 +204,125 @@ if (!Array.isArray(suggestions.body.suggestions) || suggestions.body.suggestions
   throw new Error("schedule suggestions: expected at least one viable slot");
 }
 
+const selectedSuggestion = suggestions.body.suggestions[0];
+
+const rally = await post(
+  "/v1/rallies",
+  {
+    receiverId: schedulerB.user.id,
+    sport: "TENNIS",
+    proposedStartAt: new Date(Date.now() + 86_400_000).toISOString(),
+    proposedEndAt: new Date(Date.now() + 90_000_000).toISOString()
+  },
+  schedulerA.token
+);
+assertStatus("create persisted rally", rally.status, 201);
+
+const accepted = await post(
+  `/v1/rallies/${rally.body.rally.id}/respond`,
+  { status: "ACCEPTED" },
+  schedulerB.token
+);
+assertStatus("accept persisted rally", accepted.status, 200);
+
+const scheduled = await post(
+  `/v1/rallies/${rally.body.rally.id}/schedule`,
+  {
+    proposedStartAt: dateTimeForSuggestion(selectedSuggestion, selectedSuggestion.startTime),
+    proposedEndAt: dateTimeForSuggestion(selectedSuggestion, selectedSuggestion.endTime),
+    venueId: selectedSuggestion.venue.id
+  },
+  schedulerA.token
+);
+assertStatus("select persisted schedule", scheduled.status, 200);
+
+if (scheduled.body.rally.venueId !== selectedSuggestion.venue.id) {
+  throw new Error("select persisted schedule: expected venue to persist");
+}
+if (scheduled.body.rally.status !== "SCHEDULED") {
+  throw new Error("select persisted schedule: expected explicit SCHEDULED state");
+}
+
+const booked = await post(
+  `/v1/rallies/${rally.body.rally.id}/court-booking`,
+  { courtStatus: "BOOKED", bookingReference: "smoke-test-booking" },
+  schedulerA.token
+);
+assertStatus("persist court booking", booked.status, 200);
+
+const completed = await post(`/v1/rallies/${rally.body.rally.id}/complete`, {}, schedulerA.token);
+assertStatus("complete persisted rally", completed.status, 200);
+
+const feedbackA = await post(
+  `/v1/feedback/rallies/${rally.body.rally.id}`,
+  { played: true, feltSafe: true, rallyAgain: true, experienceScore: 5 },
+  schedulerA.token
+);
+assertStatus("submit first feedback", feedbackA.status, 200);
+
+const feedbackB = await post(
+  `/v1/feedback/rallies/${rally.body.rally.id}`,
+  { played: true, feltSafe: true, rallyAgain: true, experienceScore: 5 },
+  schedulerB.token
+);
+assertStatus("submit second feedback", feedbackB.status, 200);
+
+const outcome = await get(`/v1/feedback/rallies/${rally.body.rally.id}/outcome`, schedulerA.token);
+assertStatus("read rally outcome", outcome.status, 200);
+
+if (!outcome.body.outcome.bothResponded || !outcome.body.outcome.isMutualMatch) {
+  throw new Error("read rally outcome: expected mutual match after two yes feedback entries");
+}
+
+const cancellable = await post(
+  "/v1/rallies",
+  {
+    receiverId: schedulerB.user.id,
+    sport: "TENNIS",
+    proposedStartAt: new Date(Date.now() + 172_800_000).toISOString(),
+    proposedEndAt: new Date(Date.now() + 176_400_000).toISOString()
+  },
+  schedulerA.token
+);
+assertStatus("create cancellable rally", cancellable.status, 201);
+
+const cancelled = await post(
+  `/v1/rallies/${cancellable.body.rally.id}/cancel`,
+  { reason: "Plans changed" },
+  schedulerA.token
+);
+assertStatus("cancel rally", cancelled.status, 200);
+if (
+  cancelled.body.rally.status !== "CANCELLED" ||
+  cancelled.body.rally.cancelledById !== schedulerA.user.id ||
+  cancelled.body.rally.cancellationReason !== "Plans changed"
+) {
+  throw new Error("cancel rally: expected status, actor, and reason to persist");
+}
+
+const acceptCancelled = await post(
+  `/v1/rallies/${cancellable.body.rally.id}/respond`,
+  { status: "ACCEPTED" },
+  schedulerB.token
+);
+assertStatus("reject cancelled rally transition", acceptCancelled.status, 409);
+
 console.log(JSON.stringify({
   ok: true,
   checks: [
     "health",
     "ready",
     "non-UIUC rejection",
+    "verification resend and superseded-token rejection",
+    "refresh rotation and replay rejection",
+    "logout revocation",
     "admin authorization",
     "normal admin rejection",
     "block enforcement",
-    "schedule suggestions"
+    "mutual filters and explainable recommendations",
+    "schedule suggestions",
+    "persisted rally lifecycle",
+    "explicit scheduling and cancellation states",
+    "persisted feedback outcome"
   ]
 }, null, 2));

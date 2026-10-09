@@ -9,6 +9,15 @@ export default fp(async (app) => {
     } catch {
       return reply.code(401).send({ error: "Unauthorized" });
     }
+
+    const user = await prisma.user.findUnique({
+      where: { id: request.user.sub },
+      select: { status: true }
+    });
+
+    if (!user || user.status !== "ACTIVE") {
+      return reply.code(401).send({ error: "Unauthorized" });
+    }
   });
 
   app.decorate("authorizeAdmin", async (request: FastifyRequest, reply: FastifyReply) => {

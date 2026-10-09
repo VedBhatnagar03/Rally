@@ -53,6 +53,7 @@ enum SkillLevel {
 enum RallyStatus {
   PENDING
   ACCEPTED
+  SCHEDULED
   DECLINED
   CANCELLED
   COMPLETED
@@ -155,6 +156,9 @@ model Profile {
   major           String?
   classYear       String?
   bio             String?
+  age             Int?
+  preferredAgeMin Int          @default(18)
+  preferredAgeMax Int          @default(30)
   gender          Gender?
   datingIntent    DatingIntent @default(DATING)
   interestedIn    Gender[]
@@ -227,6 +231,9 @@ model Rally {
   courtNumber      String?
   bookingOwnerId   String?
   bookingReference String?
+  cancelledAt       DateTime?
+  cancelledById     String?
+  cancellationReason String?
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
 
