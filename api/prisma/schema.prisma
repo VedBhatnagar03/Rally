@@ -234,6 +234,9 @@ model Rally {
   cancelledAt       DateTime?
   cancelledById     String?
   cancellationReason String?
+  acceptedAt        DateTime?
+  scheduledAt       DateTime?
+  completedAt       DateTime?
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
 
@@ -287,6 +290,9 @@ model Report {
   category       ReportCategory
   status         ReportStatus   @default(OPEN)
   details        String
+  resolutionNote String?
+  resolvedAt     DateTime?
+  resolvedById   String?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 

@@ -10,10 +10,10 @@
 - `SportProfile`: per-sport skill, intensity, and favorite flags.
 - `AvailabilityWindow`: recurring weekly availability.
 - `Venue`: UIUC-compatible court locations and handoff links.
-- `Rally`: explicit pending, accepted, scheduled, completed/cancelled meetup state with cancellation attribution.
+- `Rally`: explicit pending, accepted, scheduled, completed/cancelled meetup state with lifecycle timestamps and cancellation attribution.
 - `RallyFeedback`: private post-Rally feedback.
 - `Block`: immediate discovery and interaction exclusion.
-- `Report`: safety/moderation queue.
+- `Report`: safety/moderation queue with status, resolution note, timestamp and resolving administrator.
 - `AnalyticsEvent`: funnel and behavior instrumentation.
 - `AuditLog`: security-relevant backend events.
 
