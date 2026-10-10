@@ -185,6 +185,47 @@ const block = await post(
 );
 assertStatus("block user", block.status, 201);
 
+const report = await post(
+  "/v1/safety/reports",
+  {
+    reportedUserId: other.user.id,
+    category: "UNSAFE_BEHAVIOR",
+    details: "Smoke test moderation report"
+  },
+  normal.token
+);
+assertStatus("create moderation report", report.status, 201);
+
+const adminReports = await get("/v1/admin/reports?limit=10", adminLogin.body.token);
+assertStatus("admin report queue", adminReports.status, 200);
+
+const resolvedReport = await request(`/v1/admin/reports/${report.body.report.id}`, {
+  method: "PATCH",
+  headers: { authorization: `Bearer ${adminLogin.body.token}` },
+  body: JSON.stringify({ status: "RESOLVED", resolutionNote: "Reviewed during smoke test" })
+});
+assertStatus("resolve moderation report", resolvedReport.status, 200);
+if (!resolvedReport.body.report.resolvedAt || !resolvedReport.body.report.resolvedById) {
+  throw new Error("resolve moderation report: expected resolution attribution");
+}
+
+const suspended = await request(`/v1/admin/users/${other.user.id}/status`, {
+  method: "PATCH",
+  headers: { authorization: `Bearer ${adminLogin.body.token}` },
+  body: JSON.stringify({ status: "SUSPENDED", reason: "Smoke test suspension" })
+});
+assertStatus("suspend user", suspended.status, 200);
+
+const suspendedAccess = await get("/v1/me", other.token);
+assertStatus("suspended access rejection", suspendedAccess.status, 401);
+
+const reactivated = await request(`/v1/admin/users/${other.user.id}/status`, {
+  method: "PATCH",
+  headers: { authorization: `Bearer ${adminLogin.body.token}` },
+  body: JSON.stringify({ status: "ACTIVE", reason: "Smoke test complete" })
+});
+assertStatus("reactivate user", reactivated.status, 200);
+
 const blockedRally = await post(
   "/v1/rallies",
   {
@@ -318,6 +359,7 @@ console.log(JSON.stringify({
     "logout revocation",
     "admin authorization",
     "normal admin rejection",
+    "founder report resolution and user suspension",
     "block enforcement",
     "mutual filters and explainable recommendations",
     "schedule suggestions",

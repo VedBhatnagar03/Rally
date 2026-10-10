@@ -175,6 +175,7 @@ export async function rallyRoutes(app: FastifyInstance) {
       where: { id: rally.id },
       data: {
         status: body.status,
+        acceptedAt: body.status === "ACCEPTED" ? new Date() : undefined,
         courtStatus: "NOT_STARTED"
       },
       include: { venue: true }
@@ -210,6 +211,7 @@ export async function rallyRoutes(app: FastifyInstance) {
       where: { id: rally.id },
       data: {
         status: "SCHEDULED",
+        scheduledAt: new Date(),
         proposedStartAt: body.proposedStartAt,
         proposedEndAt: body.proposedEndAt,
         venueId: body.venueId,
@@ -263,7 +265,7 @@ export async function rallyRoutes(app: FastifyInstance) {
 
     const updated = await prisma.rally.update({
       where: { id: rally.id },
-      data: { status: "COMPLETED" },
+      data: { status: "COMPLETED", completedAt: rally.completedAt ?? new Date() },
       include: { venue: true }
     });
 

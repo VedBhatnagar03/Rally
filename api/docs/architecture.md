@@ -14,6 +14,7 @@ Rally does not scrape or automate Active Illini. The backend suggests the best s
 - Rallies: invite, accept, decline, booking handoff, and completion state.
 - Venues: UIUC-specific court options and booking guidance.
 - Audit: security-relevant event trail.
+- Founder operations: protected user/Rally inspection, report resolution and account suspension.
 
 ## Request Flow
 
