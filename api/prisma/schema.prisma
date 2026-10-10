@@ -11,6 +11,8 @@ enum UserStatus {
   PENDING_EMAIL_VERIFICATION
   ACTIVE
   SUSPENDED
+  DEACTIVATED
+  DELETED
 }
 
 enum UserRole {
@@ -88,6 +90,8 @@ model User {
   passwordHash String
   status       UserStatus @default(PENDING_EMAIL_VERIFICATION)
   role         UserRole   @default(USER)
+  deactivatedAt DateTime?
+  deletedAt     DateTime?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 

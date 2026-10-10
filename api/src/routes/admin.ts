@@ -98,8 +98,14 @@ export async function adminRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "You cannot suspend your own admin account" });
     }
 
-    const target = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    const target = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, status: true }
+    });
     if (!target) return reply.code(404).send({ error: "User not found" });
+    if (target.status === "DELETED") {
+      return reply.code(409).send({ error: "Deleted accounts cannot be reactivated" });
+    }
 
     const [user] = await prisma.$transaction([
       prisma.user.update({

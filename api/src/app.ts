@@ -31,6 +31,14 @@ export function buildApp() {
   });
 
   app.setErrorHandler((error, _request, reply) => {
+    const statusCode =
+      typeof error === "object" &&
+      error !== null &&
+      "statusCode" in error &&
+      typeof error.statusCode === "number"
+        ? error.statusCode
+        : null;
+
     if (error instanceof ZodError) {
       return reply.code(400).send({ error: "Invalid request", issues: error.flatten() });
     }
@@ -43,13 +51,12 @@ export function buildApp() {
       return reply.code(409).send({ error: "Resource already exists" });
     }
 
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "statusCode" in error &&
-      error.statusCode === 429
-    ) {
+    if (statusCode === 429) {
       return reply.code(429).send({ error: "Rate limit exceeded" });
+    }
+
+    if (statusCode !== null && statusCode >= 400 && statusCode < 500) {
+      return reply.code(statusCode).send({ error: "Invalid request" });
     }
 
     app.log.error(error);

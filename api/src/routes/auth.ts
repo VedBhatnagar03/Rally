@@ -170,8 +170,12 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.code(401).send({ error: "Invalid email or password" });
     }
 
-    if (user.status !== "ACTIVE") {
+    if (user.status === "PENDING_EMAIL_VERIFICATION") {
       return reply.code(403).send({ error: "Email verification required" });
+    }
+
+    if (user.status !== "ACTIVE") {
+      return reply.code(403).send({ error: "Account unavailable" });
     }
 
     await writeAuditLog({
