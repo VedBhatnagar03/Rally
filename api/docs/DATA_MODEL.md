@@ -10,7 +10,7 @@
 - `SportProfile`: per-sport skill, intensity, and favorite flags.
 - `AvailabilityWindow`: recurring weekly availability.
 - `Venue`: UIUC-compatible court locations and handoff links.
-- `Rally`: explicit pending, accepted, scheduled, completed/cancelled meetup state with lifecycle timestamps and cancellation attribution.
+- `Rally`: explicit pending, accepted, scheduled, completed/cancelled meetup state with lifecycle timestamps and cancellation attribution; only one active Rally may exist per user pair.
 - `RallyFeedback`: private post-Rally feedback.
 - `Block`: immediate discovery and interaction exclusion.
 - `Report`: safety/moderation queue with status, resolution note, timestamp and resolving administrator.
@@ -21,6 +21,7 @@
 
 - Feedback is private by default.
 - Reports are admin/moderation data only.
-- Blocks affect recommendations immediately.
+- Blocks affect recommendations immediately and cancel active Rallies between the users.
+- Rally-linked reports must name the other participant in a Rally the reporter actually joined.
 - Account deletion anonymizes identity and removes profile data while retaining safety and shared Rally records.
 - Venue data is campus-area level, not precise residence or live location.

@@ -16,6 +16,7 @@ Rally does not scrape or automate Active Illini. The backend suggests the best s
 - Audit: security-relevant event trail.
 - Founder operations: protected user/Rally inspection, report resolution and account suspension.
 - Account safety: password-confirmed deactivation/deletion, session revocation and user-controlled unblock.
+- Rally integrity: one active Rally per user pair, bounded future scheduling windows and immediate cancellation after a block.
 
 ## Request Flow
 

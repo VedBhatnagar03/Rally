@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/prisma.js";
 import {
@@ -10,7 +11,10 @@ import {
 } from "../modules/rallies/schemas.js";
 import { suggestRallySlots } from "../modules/scheduling/scheduler.js";
 import { passesHardFilters } from "../modules/matching/matcher.js";
+import { rallyWindowErrorMessage, validateRallyWindow } from "../modules/rallies/integrity.js";
 import { writeAuditLog } from "../utils/audit.js";
+
+const activeRallyStatuses = ["PENDING", "ACCEPTED", "SCHEDULED"] as const;
 
 export async function rallyRoutes(app: FastifyInstance) {
   app.get("/", { preHandler: app.authenticate }, async (request) => {
@@ -36,9 +40,8 @@ export async function rallyRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "You cannot send a Rally to yourself" });
     }
 
-    if (body.proposedEndAt <= body.proposedStartAt) {
-      return reply.code(400).send({ error: "Rally end time must be after start time" });
-    }
+    const windowError = validateRallyWindow(body.proposedStartAt, body.proposedEndAt);
+    if (windowError) return reply.code(400).send({ error: rallyWindowErrorMessage(windowError) });
 
     const [sender, receiver] = await Promise.all([
       prisma.user.findUnique({
@@ -92,17 +95,39 @@ export async function rallyRoutes(app: FastifyInstance) {
       return reply.code(403).send({ error: "Rally unavailable" });
     }
 
-    const rally = await prisma.rally.create({
-      data: {
-        senderId: request.user.sub,
-        receiverId: body.receiverId,
-        sport: body.sport,
-        proposedStartAt: body.proposedStartAt,
-        proposedEndAt: body.proposedEndAt,
-        venueId: body.venueId
+    const existingRally = await prisma.rally.findFirst({
+      where: {
+        status: { in: [...activeRallyStatuses] },
+        OR: [
+          { senderId: request.user.sub, receiverId: body.receiverId },
+          { senderId: body.receiverId, receiverId: request.user.sub }
+        ]
       },
-      include: { venue: true }
+      select: { id: true }
     });
+    if (existingRally) {
+      return reply.code(409).send({ error: "An active Rally already exists between these users" });
+    }
+
+    let rally;
+    try {
+      rally = await prisma.rally.create({
+        data: {
+          senderId: request.user.sub,
+          receiverId: body.receiverId,
+          sport: body.sport,
+          proposedStartAt: body.proposedStartAt,
+          proposedEndAt: body.proposedEndAt,
+          venueId: body.venueId
+        },
+        include: { venue: true }
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        return reply.code(409).send({ error: "An active Rally already exists between these users" });
+      }
+      throw error;
+    }
 
     return reply.code(201).send({ rally });
   });
@@ -188,9 +213,8 @@ export async function rallyRoutes(app: FastifyInstance) {
     const params = request.params as { rallyId: string };
     const body = selectScheduleSchema.parse(request.body);
 
-    if (body.proposedEndAt <= body.proposedStartAt) {
-      return reply.code(400).send({ error: "Rally end time must be after start time" });
-    }
+    const windowError = validateRallyWindow(body.proposedStartAt, body.proposedEndAt);
+    if (windowError) return reply.code(400).send({ error: rallyWindowErrorMessage(windowError) });
 
     const rally = await prisma.rally.findUnique({ where: { id: params.rallyId } });
 
