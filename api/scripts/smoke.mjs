@@ -6,7 +6,7 @@ async function request(path, options = {}) {
   const response = await fetch(`${baseUrl}${path}`, {
     ...options,
     headers: {
-      "content-type": "application/json",
+      ...(options.body ? { "content-type": "application/json" } : {}),
       ...options.headers
     }
   });
@@ -148,6 +148,8 @@ assertStatus("reject logged-out refresh", loggedOutRefresh.status, 401);
 
 const normal = await createVerifiedUser("normal", true);
 const other = await createVerifiedUser("other");
+const deactivating = await createVerifiedUser("deactivating");
+const deleting = await createVerifiedUser("deleting");
 const schedulerA = await createVerifiedUser("schedulerA");
 const schedulerB = await createVerifiedUser("schedulerB");
 
@@ -226,6 +228,39 @@ const reactivated = await request(`/v1/admin/users/${other.user.id}/status`, {
 });
 assertStatus("reactivate user", reactivated.status, 200);
 
+const deactivated = await post(
+  "/v1/me/deactivate",
+  { password, reason: "Smoke test deactivation" },
+  deactivating.token
+);
+assertStatus("deactivate account", deactivated.status, 200);
+assertStatus("deactivated access rejection", (await get("/v1/me", deactivating.token)).status, 401);
+assertStatus(
+  "deactivated refresh rejection",
+  (await post("/v1/auth/refresh", { refreshToken: deactivating.refreshToken })).status,
+  401
+);
+
+const deleted = await request("/v1/me", {
+  method: "DELETE",
+  headers: { authorization: `Bearer ${deleting.token}` },
+  body: JSON.stringify({ password, confirmation: "DELETE" })
+});
+assertStatus("delete account", deleted.status, 204);
+assertStatus("deleted access rejection", (await get("/v1/me", deleting.token)).status, 401);
+assertStatus(
+  "deleted login rejection",
+  (await post("/v1/auth/login", { email: deleting.user.email, password })).status,
+  401
+);
+
+const adminUsers = await get("/v1/admin/users?limit=100", adminLogin.body.token);
+assertStatus("admin user inspection", adminUsers.status, 200);
+const anonymized = adminUsers.body.users.find((user) => user.id === deleting.user.id);
+if (!anonymized || anonymized.status !== "DELETED" || !anonymized.email.endsWith("@deleted.invalid")) {
+  throw new Error("delete account: expected anonymized retained identity");
+}
+
 const blockedRally = await post(
   "/v1/rallies",
   {
@@ -237,6 +272,18 @@ const blockedRally = await post(
   normal.token
 );
 assertStatus("blocked rally rejection", blockedRally.status, 403);
+
+const blocks = await get("/v1/safety/blocks", normal.token);
+assertStatus("list blocks", blocks.status, 200);
+if (!blocks.body.blocks.some((entry) => entry.blockedId === other.user.id)) {
+  throw new Error("list blocks: expected blocked user");
+}
+
+const unblocked = await request(`/v1/safety/blocks/${other.user.id}`, {
+  method: "DELETE",
+  headers: { authorization: `Bearer ${normal.token}` }
+});
+assertStatus("unblock user", unblocked.status, 204);
 
 const suggestions = await get(`/v1/rallies/suggestions/${schedulerB.user.id}`, schedulerA.token);
 assertStatus("schedule suggestions", suggestions.status, 200);
@@ -361,6 +408,7 @@ console.log(JSON.stringify({
     "normal admin rejection",
     "founder report resolution and user suspension",
     "block enforcement",
+    "account deactivation, deletion, and unblock",
     "mutual filters and explainable recommendations",
     "schedule suggestions",
     "persisted rally lifecycle",

@@ -2,7 +2,7 @@
 
 ## Core Tables
 
-- `User`: login identity, UIUC email, password hash, verification status, admin role.
+- `User`: login identity, UIUC email, password hash, verification/account-lifecycle status, admin role.
 - `EmailVerificationToken`: hash-only email verification tokens.
 - `RefreshToken`: hash-only, rotating session tokens with expiry and revocation.
 - `Profile`: dating and campus profile.
@@ -22,4 +22,5 @@
 - Feedback is private by default.
 - Reports are admin/moderation data only.
 - Blocks affect recommendations immediately.
+- Account deletion anonymizes identity and removes profile data while retaining safety and shared Rally records.
 - Venue data is campus-area level, not precise residence or live location.
