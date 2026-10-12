@@ -92,6 +92,7 @@ model User {
   role         UserRole   @default(USER)
   deactivatedAt DateTime?
   deletedAt     DateTime?
+  lastActiveAt  DateTime?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
@@ -110,6 +111,8 @@ model User {
   reportsReceived         Report[]                 @relation("Reported")
   feedback                RallyFeedback[]
   analyticsEvents         AnalyticsEvent[]
+
+  @@index([lastActiveAt])
 }
 
 model EmailVerificationToken {

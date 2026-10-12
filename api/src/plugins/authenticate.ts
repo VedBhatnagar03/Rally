@@ -12,11 +12,19 @@ export default fp(async (app) => {
 
     const user = await prisma.user.findUnique({
       where: { id: request.user.sub },
-      select: { status: true }
+      select: { status: true, lastActiveAt: true }
     });
 
     if (!user || user.status !== "ACTIVE") {
       return reply.code(401).send({ error: "Unauthorized" });
+    }
+
+    const activityWriteThreshold = new Date(Date.now() - 15 * 60 * 1000);
+    if (!user.lastActiveAt || user.lastActiveAt < activityWriteThreshold) {
+      await prisma.user.update({
+        where: { id: request.user.sub },
+        data: { lastActiveAt: new Date() }
+      });
     }
   });
 

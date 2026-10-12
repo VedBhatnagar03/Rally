@@ -172,8 +172,17 @@ if (
 await completeProfile(normal, "Normal User", [{ dayOfWeek: 2, startTime: "17:00", endTime: "20:00" }]);
 await completeProfile(other, "Other User", [{ dayOfWeek: 2, startTime: "18:00", endTime: "21:00" }]);
 
-const adminSummary = await get("/v1/admin/summary", adminLogin.body.token);
+const adminSummary = await get("/v1/admin/summary?windowDays=7", adminLogin.body.token);
 assertStatus("admin summary", adminSummary.status, 200);
+if (
+  adminSummary.body.summary.window?.days !== 7 ||
+  adminSummary.body.summary.window.activeUsers < 1 ||
+  typeof adminSummary.body.summary.window.outcomes?.completedRalliesPerActiveUser !== "number" ||
+  typeof adminSummary.body.summary.window.funnel?.conversionPercent?.sentToAccepted !== "number" ||
+  typeof adminSummary.body.summary.operations?.pendingOver48Hours !== "number"
+) {
+  throw new Error("admin summary: expected founder funnel and operational metrics");
+}
 
 const normalSummary = await get("/v1/admin/summary", normal.token);
 assertStatus("normal admin rejection", normalSummary.status, 403);
@@ -464,6 +473,7 @@ console.log(JSON.stringify({
     "refresh rotation and replay rejection",
     "logout revocation",
     "admin authorization",
+    "founder funnel and operational metrics",
     "normal admin rejection",
     "founder report resolution and user suspension",
     "block enforcement",

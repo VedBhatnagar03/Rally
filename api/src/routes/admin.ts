@@ -2,13 +2,22 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/prisma.js";
 import {
   adminListQuerySchema,
+  adminSummaryQuerySchema,
   updateReportSchema,
   updateUserStatusSchema
 } from "../modules/admin/schemas.js";
+import { buildFunnelRates, perActiveUser } from "../modules/admin/metrics.js";
 import { writeAuditLog } from "../utils/audit.js";
 
 export async function adminRoutes(app: FastifyInstance) {
-  app.get("/summary", { preHandler: app.authorizeAdmin }, async () => {
+  app.get("/summary", { preHandler: app.authorizeAdmin }, async (request) => {
+    const { windowDays } = adminSummaryQuerySchema.parse(request.query);
+    const now = new Date();
+    const windowStart = new Date(now.getTime() - windowDays * 24 * 60 * 60 * 1000);
+    const stalePendingBefore = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+    const staleAcceptedBefore = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const staleReportBefore = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
     const [
       users,
       activeUsers,
@@ -18,8 +27,20 @@ export async function adminRoutes(app: FastifyInstance) {
       acceptedRallies,
       scheduledRallies,
       completedRallies,
-      mutualRallyAgain,
-      openReports
+      mutualCandidates,
+      openReports,
+      activeUsersInWindow,
+      ralliesSentInWindow,
+      acceptedFromSentCohort,
+      scheduledFromSentCohort,
+      completedFromSentCohort,
+      completedInWindow,
+      cancelledInWindow,
+      reportsInWindow,
+      stalePendingRallies,
+      staleAcceptedRallies,
+      overdueScheduledRallies,
+      staleOpenReports
     ] = await Promise.all([
       prisma.user.count(),
       prisma.user.count({ where: { status: "ACTIVE" } }),
@@ -36,16 +57,46 @@ export async function adminRoutes(app: FastifyInstance) {
       prisma.rally.count({ where: { acceptedAt: { not: null } } }),
       prisma.rally.count({ where: { scheduledAt: { not: null } } }),
       prisma.rally.count({ where: { completedAt: { not: null } } }),
-      prisma.rally.count({
+      prisma.rally.findMany({
         where: {
           feedback: {
             every: { rallyAgain: true },
             some: { rallyAgain: true }
           }
-        }
+        },
+        select: { completedAt: true, feedback: { select: { id: true } } }
       }),
-      prisma.report.count({ where: { status: { in: ["OPEN", "REVIEWING"] } } })
+      prisma.report.count({ where: { status: { in: ["OPEN", "REVIEWING"] } } }),
+      prisma.user.count({ where: { status: "ACTIVE", lastActiveAt: { gte: windowStart } } }),
+      prisma.rally.count({ where: { createdAt: { gte: windowStart } } }),
+      prisma.rally.count({
+        where: { createdAt: { gte: windowStart }, acceptedAt: { not: null } }
+      }),
+      prisma.rally.count({
+        where: { createdAt: { gte: windowStart }, scheduledAt: { not: null } }
+      }),
+      prisma.rally.count({
+        where: { createdAt: { gte: windowStart }, completedAt: { not: null } }
+      }),
+      prisma.rally.count({ where: { completedAt: { gte: windowStart } } }),
+      prisma.rally.count({ where: { cancelledAt: { gte: windowStart } } }),
+      prisma.report.count({ where: { createdAt: { gte: windowStart } } }),
+      prisma.rally.count({ where: { status: "PENDING", createdAt: { lt: stalePendingBefore } } }),
+      prisma.rally.count({ where: { status: "ACCEPTED", acceptedAt: { lt: staleAcceptedBefore } } }),
+      prisma.rally.count({ where: { status: "SCHEDULED", proposedEndAt: { lt: now } } }),
+      prisma.report.count({
+        where: {
+          status: { in: ["OPEN", "REVIEWING"] },
+          createdAt: { lt: staleReportBefore }
+        }
+      })
     ]);
+
+    const mutualRallyAgain = mutualCandidates.filter(({ feedback }) => feedback.length >= 2).length;
+    const mutualRallyAgainInWindow = mutualCandidates.filter(
+      ({ completedAt, feedback }) =>
+        feedback.length >= 2 && completedAt !== null && completedAt >= windowStart
+    ).length;
 
     return {
       summary: {
@@ -58,7 +109,37 @@ export async function adminRoutes(app: FastifyInstance) {
         scheduledRallies,
         completedRallies,
         mutualRallyAgain,
-        openReports
+        openReports,
+        window: {
+          days: windowDays,
+          startsAt: windowStart,
+          activeUsers: activeUsersInWindow,
+          funnel: {
+            ralliesSent: ralliesSentInWindow,
+            acceptedRallies: acceptedFromSentCohort,
+            scheduledRallies: scheduledFromSentCohort,
+            completedRallies: completedFromSentCohort,
+            conversionPercent: buildFunnelRates({
+              sent: ralliesSentInWindow,
+              accepted: acceptedFromSentCohort,
+              scheduled: scheduledFromSentCohort,
+              completed: completedFromSentCohort
+            })
+          },
+          outcomes: {
+            completedRallies: completedInWindow,
+            cancelledRallies: cancelledInWindow,
+            mutualRallyAgain: mutualRallyAgainInWindow,
+            reports: reportsInWindow,
+            completedRalliesPerActiveUser: perActiveUser(completedInWindow, activeUsersInWindow)
+          }
+        },
+        operations: {
+          pendingOver48Hours: stalePendingRallies,
+          acceptedUnscheduledOver24Hours: staleAcceptedRallies,
+          scheduledPastEnd: overdueScheduledRallies,
+          unresolvedReportsOver24Hours: staleOpenReports
+        }
       }
     };
   });
@@ -73,6 +154,7 @@ export async function adminRoutes(app: FastifyInstance) {
         role: true,
         createdAt: true,
         updatedAt: true,
+        lastActiveAt: true,
         profile: true,
         sportProfiles: true,
         availability: true,

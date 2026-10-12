@@ -5,6 +5,10 @@ export const adminListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50)
 });
 
+export const adminSummaryQuerySchema = z.object({
+  windowDays: z.coerce.number().int().min(1).max(90).default(7)
+});
+
 export const updateUserStatusSchema = z.object({
   status: z.enum([UserStatus.ACTIVE, UserStatus.SUSPENDED]),
   reason: z.string().trim().min(3).max(280)
