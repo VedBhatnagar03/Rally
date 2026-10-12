@@ -16,6 +16,7 @@
 - `Report`: safety/moderation queue with status, resolution note, timestamp and resolving administrator.
 - `AnalyticsEvent`: funnel and behavior instrumentation.
 - `AuditLog`: security-relevant backend events.
+- `OperationalIncident`: sanitized unexpected-error records for founder diagnosis and resolution.
 
 ## Privacy Notes
 
@@ -25,3 +26,4 @@
 - Rally-linked reports must name the other participant in a Rally the reporter actually joined.
 - Account deletion anonymizes identity and removes profile data while retaining safety and shared Rally records.
 - Venue data is campus-area level, not precise residence or live location.
+- Operational incidents never store request bodies, authorization headers or stack traces.

@@ -3,6 +3,8 @@ import { prisma } from "../db/prisma.js";
 import {
   adminListQuerySchema,
   adminSummaryQuerySchema,
+  incidentListQuerySchema,
+  resolveIncidentSchema,
   updateReportSchema,
   updateUserStatusSchema
 } from "../modules/admin/schemas.js";
@@ -40,7 +42,8 @@ export async function adminRoutes(app: FastifyInstance) {
       stalePendingRallies,
       staleAcceptedRallies,
       overdueScheduledRallies,
-      staleOpenReports
+      staleOpenReports,
+      openIncidents
     ] = await Promise.all([
       prisma.user.count(),
       prisma.user.count({ where: { status: "ACTIVE" } }),
@@ -89,7 +92,8 @@ export async function adminRoutes(app: FastifyInstance) {
           status: { in: ["OPEN", "REVIEWING"] },
           createdAt: { lt: staleReportBefore }
         }
-      })
+      }),
+      prisma.operationalIncident.count({ where: { resolvedAt: null } })
     ]);
 
     const mutualRallyAgain = mutualCandidates.filter(({ feedback }) => feedback.length >= 2).length;
@@ -138,7 +142,8 @@ export async function adminRoutes(app: FastifyInstance) {
           pendingOver48Hours: stalePendingRallies,
           acceptedUnscheduledOver24Hours: staleAcceptedRallies,
           scheduledPastEnd: overdueScheduledRallies,
-          unresolvedReportsOver24Hours: staleOpenReports
+          unresolvedReportsOver24Hours: staleOpenReports,
+          openIncidents
         }
       }
     };
@@ -237,6 +242,46 @@ export async function adminRoutes(app: FastifyInstance) {
       take: limit
     });
     return { reports };
+  });
+
+  app.get("/incidents", { preHandler: app.authorizeAdmin }, async (request) => {
+    const { limit, status } = incidentListQuerySchema.parse(request.query);
+    const incidents = await prisma.operationalIncident.findMany({
+      where:
+        status === "ALL"
+          ? undefined
+          : { resolvedAt: status === "OPEN" ? null : { not: null } },
+      orderBy: { createdAt: "desc" },
+      take: limit
+    });
+    return { incidents };
+  });
+
+  app.patch("/incidents/:incidentId/resolve", { preHandler: app.authorizeAdmin }, async (request, reply) => {
+    const { incidentId } = request.params as { incidentId: string };
+    const body = resolveIncidentSchema.parse(request.body);
+    const existing = await prisma.operationalIncident.findUnique({
+      where: { id: incidentId },
+      select: { id: true }
+    });
+    if (!existing) return reply.code(404).send({ error: "Incident not found" });
+
+    const incident = await prisma.operationalIncident.update({
+      where: { id: incidentId },
+      data: {
+        resolvedAt: new Date(),
+        resolvedById: request.user.sub,
+        resolutionNote: body.resolutionNote
+      }
+    });
+
+    await writeAuditLog({
+      userId: request.user.sub,
+      action: "admin.incident_resolved",
+      metadata: { incidentId },
+      request
+    });
+    return { incident };
   });
 
   app.patch("/reports/:reportId", { preHandler: app.authorizeAdmin }, async (request, reply) => {
