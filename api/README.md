@@ -74,6 +74,7 @@ Current foundation:
 - `POST /v1/auth/reset-password`
 - `POST /v1/auth/login`
 - `GET /v1/me`
+- `GET /v1/me/export`
 - `PUT /v1/me/profile`
 - `GET /v1/recommendations`
 - `GET /v1/rallies/suggestions/:receiverId`

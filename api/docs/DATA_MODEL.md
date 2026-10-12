@@ -28,3 +28,4 @@
 - Account deletion anonymizes identity and removes profile data while retaining safety and shared Rally records.
 - Venue data is campus-area level, not precise residence or live location.
 - Operational incidents never store request bodies, authorization headers or stack traces.
+- User exports include only the requester's account data and shared Rally records; secrets and reports submitted by other users are excluded.

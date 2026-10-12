@@ -17,6 +17,7 @@
 - Authentication events are written to `AuditLog`.
 - Unexpected 5xx failures create sanitized, admin-only operational incidents.
 - Founder-console routes require a current database-backed `ADMIN` role.
+- Authenticated users can export their own account data without token hashes or private reports about them.
 - Blocks are enforced in discovery and direct Rally creation.
 - Prisma is the database access layer for request handlers.
 - `npm audit --audit-level=moderate` is part of verification.
@@ -30,7 +31,7 @@
 - Enable encrypted automated backups and test a restore using the runbook.
 - Add external alert delivery for new operational incidents.
 - Define structured security and audit-log retention periods.
-- Add a user data-export workflow before a public launch.
+- Publish reviewed privacy and community materials in the frontend before inviting beta users.
 
 ## Reporting Issues
 
