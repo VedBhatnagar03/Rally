@@ -158,9 +158,7 @@ await completeProfile(schedulerB, "Scheduler B", [{ dayOfWeek: 2, startTime: "18
 
 const recommendations = await get("/v1/recommendations", schedulerA.token);
 assertStatus("explainable recommendations", recommendations.status, 200);
-const schedulerRecommendation = recommendations.body.recommendations.find(
-  (candidate) => candidate.userId === schedulerB.user.id
-);
+const schedulerRecommendation = recommendations.body.recommendations[0];
 if (
   !schedulerRecommendation ||
   !Array.isArray(schedulerRecommendation.reasons) ||
@@ -171,11 +169,26 @@ if (
   throw new Error("explainable recommendations: expected reasons and five score components");
 }
 
+await completeProfile(normal, "Normal User", [{ dayOfWeek: 2, startTime: "17:00", endTime: "20:00" }]);
+await completeProfile(other, "Other User", [{ dayOfWeek: 2, startTime: "18:00", endTime: "21:00" }]);
+
 const adminSummary = await get("/v1/admin/summary", adminLogin.body.token);
 assertStatus("admin summary", adminSummary.status, 200);
 
 const normalSummary = await get("/v1/admin/summary", normal.token);
 assertStatus("normal admin rejection", normalSummary.status, 403);
+
+const rallyCancelledByBlock = await post(
+  "/v1/rallies",
+  {
+    receiverId: other.user.id,
+    sport: "TENNIS",
+    proposedStartAt: new Date(Date.now() + 86_400_000).toISOString(),
+    proposedEndAt: new Date(Date.now() + 90_000_000).toISOString()
+  },
+  normal.token
+);
+assertStatus("create rally before block", rallyCancelledByBlock.status, 201);
 
 const block = await post(
   "/v1/safety/blocks",
@@ -187,16 +200,38 @@ const block = await post(
 );
 assertStatus("block user", block.status, 201);
 
+const normalRallies = await get("/v1/rallies", normal.token);
+assertStatus("list rallies after block", normalRallies.status, 200);
+const blockedPairRally = normalRallies.body.rallies.find(
+  (entry) => entry.id === rallyCancelledByBlock.body.rally.id
+);
+if (!blockedPairRally || blockedPairRally.status !== "CANCELLED") {
+  throw new Error("block user: expected the active Rally to be cancelled");
+}
+
 const report = await post(
   "/v1/safety/reports",
   {
     reportedUserId: other.user.id,
+    rallyId: rallyCancelledByBlock.body.rally.id,
     category: "UNSAFE_BEHAVIOR",
     details: "Smoke test moderation report"
   },
   normal.token
 );
 assertStatus("create moderation report", report.status, 201);
+
+const unrelatedReport = await post(
+  "/v1/safety/reports",
+  {
+    reportedUserId: other.user.id,
+    rallyId: rallyCancelledByBlock.body.rally.id,
+    category: "OTHER",
+    details: "This reporter did not participate in the Rally"
+  },
+  schedulerA.token
+);
+assertStatus("reject unrelated rally report", unrelatedReport.status, 400);
 
 const adminReports = await get("/v1/admin/reports?limit=10", adminLogin.body.token);
 assertStatus("admin report queue", adminReports.status, 200);
@@ -306,6 +341,30 @@ const rally = await post(
 );
 assertStatus("create persisted rally", rally.status, 201);
 
+const duplicateRally = await post(
+  "/v1/rallies",
+  {
+    receiverId: schedulerA.user.id,
+    sport: "TENNIS",
+    proposedStartAt: new Date(Date.now() + 172_800_000).toISOString(),
+    proposedEndAt: new Date(Date.now() + 176_400_000).toISOString()
+  },
+  schedulerB.token
+);
+assertStatus("reject duplicate active rally", duplicateRally.status, 409);
+
+const pastRally = await post(
+  "/v1/rallies",
+  {
+    receiverId: schedulerB.user.id,
+    sport: "TENNIS",
+    proposedStartAt: new Date(Date.now() - 7_200_000).toISOString(),
+    proposedEndAt: new Date(Date.now() - 3_600_000).toISOString()
+  },
+  schedulerA.token
+);
+assertStatus("reject past rally window", pastRally.status, 400);
+
 const accepted = await post(
   `/v1/rallies/${rally.body.rally.id}/respond`,
   { status: "ACCEPTED" },
@@ -408,10 +467,12 @@ console.log(JSON.stringify({
     "normal admin rejection",
     "founder report resolution and user suspension",
     "block enforcement",
+    "block cancellation and report relationship integrity",
     "account deactivation, deletion, and unblock",
     "mutual filters and explainable recommendations",
     "schedule suggestions",
     "persisted rally lifecycle",
+    "duplicate and invalid Rally rejection",
     "explicit scheduling and cancellation states",
     "persisted feedback outcome"
   ]

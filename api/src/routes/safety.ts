@@ -30,22 +30,49 @@ export async function safetyRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "You cannot block yourself" });
     }
 
-    const block = await prisma.block.upsert({
-      where: {
-        blockerId_blockedId: {
-          blockerId: request.user.sub,
-          blockedId: body.blockedUserId
-        }
-      },
-      create: {
-        blockerId: request.user.sub,
-        blockedId: body.blockedUserId,
-        reason: body.reason
-      },
-      update: {
-        reason: body.reason
-      }
+    const blockedUser = await prisma.user.findUnique({
+      where: { id: body.blockedUserId },
+      select: { id: true, status: true }
     });
+    if (!blockedUser || blockedUser.status === "DELETED") {
+      return reply.code(404).send({ error: "User not found" });
+    }
+
+    const now = new Date();
+    const [block] = await prisma.$transaction([
+      prisma.block.upsert({
+        where: {
+          blockerId_blockedId: {
+            blockerId: request.user.sub,
+            blockedId: body.blockedUserId
+          }
+        },
+        create: {
+          blockerId: request.user.sub,
+          blockedId: body.blockedUserId,
+          reason: body.reason
+        },
+        update: {
+          reason: body.reason
+        }
+      }),
+      prisma.rally.updateMany({
+        where: {
+          status: { in: ["PENDING", "ACCEPTED", "SCHEDULED"] },
+          OR: [
+            { senderId: request.user.sub, receiverId: body.blockedUserId },
+            { senderId: body.blockedUserId, receiverId: request.user.sub }
+          ]
+        },
+        data: {
+          status: "CANCELLED",
+          cancelledAt: now,
+          cancelledById: request.user.sub,
+          cancellationReason: "Cancelled after a participant blocked the other user",
+          courtStatus: "NOT_STARTED"
+        }
+      })
+    ]);
 
     await writeAuditLog({
       userId: request.user.sub,
@@ -81,6 +108,30 @@ export async function safetyRoutes(app: FastifyInstance) {
 
     if (body.reportedUserId === request.user.sub) {
       return reply.code(400).send({ error: "You cannot report yourself" });
+    }
+
+    const reportedUser = await prisma.user.findUnique({
+      where: { id: body.reportedUserId },
+      select: { id: true, status: true }
+    });
+    if (!reportedUser || reportedUser.status === "DELETED") {
+      return reply.code(404).send({ error: "User not found" });
+    }
+
+    if (body.rallyId) {
+      const rally = await prisma.rally.findUnique({
+        where: { id: body.rallyId },
+        select: { senderId: true, receiverId: true }
+      });
+      const expectedParticipants = new Set([request.user.sub, body.reportedUserId]);
+      if (
+        !rally ||
+        !expectedParticipants.has(rally.senderId) ||
+        !expectedParticipants.has(rally.receiverId) ||
+        rally.senderId === rally.receiverId
+      ) {
+        return reply.code(400).send({ error: "Rally does not belong to these users" });
+      }
     }
 
     const report = await prisma.report.create({
