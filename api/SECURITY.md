@@ -6,11 +6,13 @@
 - Email verification required before login.
 - Passwords hashed with Argon2id.
 - Verification tokens are opaque and stored only as SHA-256 hashes.
+- Password reset tokens are single-use, expire after one hour, and are stored only as SHA-256 hashes.
 - JWT access tokens are short-lived and carry only `sub` and `email`.
 - Secrets live in environment variables and `.env` is ignored.
 - CORS is explicitly configured through `CORS_ORIGIN`.
 - Helmet sets defensive HTTP headers.
 - Global rate limiting is enabled.
+- Sensitive authentication routes have tighter per-route rate limits.
 - Request bodies are capped at 1 MB.
 - Authentication events are written to `AuditLog`.
 - Unexpected 5xx failures create sanitized, admin-only operational incidents.

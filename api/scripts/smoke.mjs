@@ -153,6 +153,54 @@ const deleting = await createVerifiedUser("deleting");
 const schedulerA = await createVerifiedUser("schedulerA");
 const schedulerB = await createVerifiedUser("schedulerB");
 
+const unknownRecovery = await post("/v1/auth/forgot-password", {
+  email: `missing.${Date.now()}@illinois.edu`
+});
+assertStatus("generic unknown-account recovery", unknownRecovery.status, 202);
+if (unknownRecovery.body.devResetToken) {
+  throw new Error("generic unknown-account recovery: must not issue a reset token");
+}
+
+const recovery = await post("/v1/auth/forgot-password", { email: normal.user.email });
+assertStatus("request password reset", recovery.status, 202);
+if (!recovery.body.devResetToken) {
+  throw new Error("request password reset: expected development reset token");
+}
+
+const reusedPassword = await post("/v1/auth/reset-password", {
+  token: recovery.body.devResetToken,
+  password
+});
+assertStatus("reject reused password", reusedPassword.status, 400);
+
+const recoveredPassword = "new-correct-horse-battery-staple";
+const passwordReset = await post("/v1/auth/reset-password", {
+  token: recovery.body.devResetToken,
+  password: recoveredPassword
+});
+assertStatus("reset password", passwordReset.status, 204);
+
+const resetReplay = await post("/v1/auth/reset-password", {
+  token: recovery.body.devResetToken,
+  password: "another-correct-horse-battery-staple"
+});
+assertStatus("reject reset token replay", resetReplay.status, 400);
+
+const revokedByReset = await post("/v1/auth/refresh", { refreshToken: normal.refreshToken });
+assertStatus("revoke sessions after password reset", revokedByReset.status, 401);
+
+const oldPasswordLogin = await post("/v1/auth/login", {
+  email: normal.user.email,
+  password
+});
+assertStatus("reject old password", oldPasswordLogin.status, 401);
+
+const recoveredLogin = await post("/v1/auth/login", {
+  email: normal.user.email,
+  password: recoveredPassword
+});
+assertStatus("login with recovered password", recoveredLogin.status, 200);
+
 await completeProfile(schedulerA, "Scheduler A", [{ dayOfWeek: 2, startTime: "17:00", endTime: "20:00" }]);
 await completeProfile(schedulerB, "Scheduler B", [{ dayOfWeek: 2, startTime: "18:00", endTime: "21:00" }]);
 
@@ -494,6 +542,7 @@ console.log(JSON.stringify({
     "verification resend and superseded-token rejection",
     "refresh rotation and replay rejection",
     "logout revocation",
+    "single-use password recovery and session revocation",
     "admin authorization",
     "founder funnel and operational metrics",
     "normal admin rejection",

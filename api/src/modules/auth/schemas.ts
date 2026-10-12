@@ -22,3 +22,12 @@ export const refreshSessionSchema = z.object({
 export const resendVerificationSchema = z.object({
   email: z.string().email()
 });
+
+export const forgotPasswordSchema = z.object({
+  email: z.string().email()
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(32).max(256),
+  password: z.string().min(12).max(128)
+});

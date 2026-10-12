@@ -121,6 +121,7 @@ export async function meRoutes(app: FastifyInstance) {
       prisma.availabilityWindow.deleteMany({ where: { userId: user.id } }),
       prisma.photo.deleteMany({ where: { userId: user.id } }),
       prisma.emailVerificationToken.deleteMany({ where: { userId: user.id } }),
+      prisma.passwordResetToken.deleteMany({ where: { userId: user.id } }),
       prisma.refreshToken.deleteMany({ where: { userId: user.id } }),
       prisma.analyticsEvent.deleteMany({ where: { userId: user.id } }),
       prisma.block.deleteMany({

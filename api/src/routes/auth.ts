@@ -2,9 +2,11 @@ import type { FastifyInstance } from "fastify";
 import { adminEmails } from "../config/env.js";
 import { prisma } from "../db/prisma.js";
 import {
+  forgotPasswordSchema,
   loginSchema,
   refreshSessionSchema,
   registerSchema,
+  resetPasswordSchema,
   resendVerificationSchema,
   verifyEmailSchema
 } from "../modules/auth/schemas.js";
@@ -12,6 +14,7 @@ import { env } from "../config/env.js";
 import { writeAuditLog } from "../utils/audit.js";
 import { assertUiucEmail, normalizeEmail } from "../utils/email.js";
 import { hashPassword, verifyPassword } from "../utils/password.js";
+import { sendPasswordResetEmail } from "../utils/password-reset-email.js";
 import { createOpaqueToken, hashToken } from "../utils/tokens.js";
 import { sendVerificationEmail } from "../utils/verification-email.js";
 
@@ -34,7 +37,7 @@ export async function authRoutes(app: FastifyInstance) {
     return { token: accessToken, accessToken, refreshToken, user };
   }
 
-  app.post("/register", async (request, reply) => {
+  app.post("/register", { config: { rateLimit: { max: 10, timeWindow: "1 hour" } } }, async (request, reply) => {
     const body = registerSchema.parse(request.body);
     const email = assertUiucEmail(body.email);
     const verificationToken = createOpaqueToken();
@@ -127,7 +130,10 @@ export async function authRoutes(app: FastifyInstance) {
     }
   );
 
-  app.post("/verify-email", async (request, reply) => {
+  app.post(
+    "/verify-email",
+    { config: { rateLimit: { max: 10, timeWindow: "1 hour" } } },
+    async (request, reply) => {
     const body = verifyEmailSchema.parse(request.body);
     const tokenHash = hashToken(body.token);
 
@@ -157,14 +163,18 @@ export async function authRoutes(app: FastifyInstance) {
       request
     });
 
-    return issueSession({
-      id: verification.userId,
-      email: verification.user.email,
-      role: verification.user.role
-    });
-  });
+      return issueSession({
+        id: verification.userId,
+        email: verification.user.email,
+        role: verification.user.role
+      });
+    }
+  );
 
-  app.post("/login", async (request, reply) => {
+  app.post(
+    "/login",
+    { config: { rateLimit: { max: 10, timeWindow: "15 minutes" } } },
+    async (request, reply) => {
     const body = loginSchema.parse(request.body);
     const email = normalizeEmail(body.email);
     const user = await prisma.user.findUnique({ where: { email } });
@@ -187,10 +197,110 @@ export async function authRoutes(app: FastifyInstance) {
       request
     });
 
-    return issueSession({ id: user.id, email: user.email, role: user.role });
-  });
+      return issueSession({ id: user.id, email: user.email, role: user.role });
+    }
+  );
 
-  app.post("/refresh", async (request, reply) => {
+  app.post(
+    "/forgot-password",
+    { config: { rateLimit: { max: 3, timeWindow: "1 hour" } } },
+    async (request, reply) => {
+      const body = forgotPasswordSchema.parse(request.body);
+      const email = normalizeEmail(body.email);
+      const user = await prisma.user.findUnique({
+        where: { email },
+        select: { id: true, email: true, status: true }
+      });
+
+      let devResetToken: string | undefined;
+      if (user?.status === "ACTIVE") {
+        const token = createOpaqueToken();
+        const created = await prisma.$transaction(async (tx) => {
+          await tx.passwordResetToken.updateMany({
+            where: { userId: user.id, consumedAt: null },
+            data: { consumedAt: new Date() }
+          });
+          return tx.passwordResetToken.create({
+            data: {
+              userId: user.id,
+              tokenHash: hashToken(token),
+              expiresAt: new Date(Date.now() + 60 * 60 * 1000)
+            }
+          });
+        });
+
+        await sendPasswordResetEmail({
+          email: user.email,
+          token,
+          idempotencyKey: `password-reset/${created.id}`
+        });
+        await writeAuditLog({ userId: user.id, action: "auth.password_reset_requested", request });
+        devResetToken = env.NODE_ENV === "production" ? undefined : token;
+      }
+
+      return reply.code(202).send({
+        message: "If an active Rally account exists, a password reset email has been sent.",
+        devResetToken
+      });
+    }
+  );
+
+  app.post(
+    "/reset-password",
+    { config: { rateLimit: { max: 5, timeWindow: "1 hour" } } },
+    async (request, reply) => {
+      const body = resetPasswordSchema.parse(request.body);
+      const tokenHash = hashToken(body.token);
+      const resetToken = await prisma.passwordResetToken.findUnique({
+        where: { tokenHash },
+        include: { user: { select: { id: true, passwordHash: true, status: true } } }
+      });
+
+      if (
+        !resetToken ||
+        resetToken.consumedAt ||
+        resetToken.expiresAt <= new Date() ||
+        resetToken.user.status !== "ACTIVE"
+      ) {
+        return reply.code(400).send({ error: "Invalid or expired password reset token" });
+      }
+
+      if (await verifyPassword(resetToken.user.passwordHash, body.password)) {
+        return reply.code(400).send({ error: "New password must be different from the current password" });
+      }
+
+      const passwordHash = await hashPassword(body.password);
+      const reset = await prisma.$transaction(async (tx) => {
+        const consumed = await tx.passwordResetToken.updateMany({
+          where: { id: resetToken.id, consumedAt: null, expiresAt: { gt: new Date() } },
+          data: { consumedAt: new Date() }
+        });
+        if (consumed.count !== 1) return false;
+
+        await tx.user.update({
+          where: { id: resetToken.user.id },
+          data: { passwordHash }
+        });
+        await tx.refreshToken.updateMany({
+          where: { userId: resetToken.user.id, revokedAt: null },
+          data: { revokedAt: new Date() }
+        });
+        return true;
+      });
+
+      if (!reset) {
+        return reply.code(400).send({ error: "Invalid or expired password reset token" });
+      }
+
+      await writeAuditLog({ userId: resetToken.user.id, action: "auth.password_reset", request });
+      return reply.code(204).send();
+    }
+  );
+
+  app.post(
+    "/refresh",
+    { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } },
+    async (request, reply) => {
     const body = refreshSessionSchema.parse(request.body);
     const currentHash = hashToken(body.refreshToken);
     const current = await prisma.refreshToken.findUnique({
@@ -233,13 +343,14 @@ export async function authRoutes(app: FastifyInstance) {
 
     await writeAuditLog({ userId: current.user.id, action: "auth.refresh", request });
 
-    return {
-      token: accessToken,
-      accessToken,
-      refreshToken: nextRefreshToken,
-      user: { id: current.user.id, email: current.user.email, role: current.user.role }
-    };
-  });
+      return {
+        token: accessToken,
+        accessToken,
+        refreshToken: nextRefreshToken,
+        user: { id: current.user.id, email: current.user.email, role: current.user.role }
+      };
+    }
+  );
 
   app.post("/logout", async (request, reply) => {
     const body = refreshSessionSchema.parse(request.body);
