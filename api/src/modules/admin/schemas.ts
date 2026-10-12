@@ -9,6 +9,14 @@ export const adminSummaryQuerySchema = z.object({
   windowDays: z.coerce.number().int().min(1).max(90).default(7)
 });
 
+export const incidentListQuerySchema = adminListQuerySchema.extend({
+  status: z.enum(["OPEN", "RESOLVED", "ALL"]).default("OPEN")
+});
+
+export const resolveIncidentSchema = z.object({
+  resolutionNote: z.string().trim().min(3).max(1200)
+});
+
 export const updateUserStatusSchema = z.object({
   status: z.enum([UserStatus.ACTIVE, UserStatus.SUSPENDED]),
   reason: z.string().trim().min(3).max(280)

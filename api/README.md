@@ -86,6 +86,8 @@ Current foundation:
 - `GET /v1/venues`
 - `GET /v1/admin/summary`
 - `GET /v1/admin/reports`
+- `GET /v1/admin/incidents`
+- `PATCH /v1/admin/incidents/:incidentId/resolve`
 
 ## Development Notes
 

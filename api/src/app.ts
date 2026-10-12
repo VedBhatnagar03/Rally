@@ -19,6 +19,7 @@ import { safetyRoutes } from "./routes/safety.js";
 import { venueRoutes } from "./routes/venues.js";
 import { devRoutes } from "./routes/dev.js";
 import { InvalidEmailDomainError } from "./utils/email.js";
+import { describeOperationalIncident } from "./utils/operational-incident.js";
 
 export function buildApp() {
   const app = Fastify({
@@ -30,7 +31,7 @@ export function buildApp() {
     genReqId: () => crypto.randomUUID()
   });
 
-  app.setErrorHandler((error, _request, reply) => {
+  app.setErrorHandler(async (error, request, reply) => {
     const statusCode =
       typeof error === "object" &&
       error !== null &&
@@ -59,7 +60,14 @@ export function buildApp() {
       return reply.code(statusCode).send({ error: "Invalid request" });
     }
 
-    app.log.error(error);
+    app.log.error({ error, requestId: request.id }, "Unhandled request error");
+    try {
+      await prisma.operationalIncident.create({
+        data: describeOperationalIncident(request, error)
+      });
+    } catch (incidentError) {
+      app.log.error({ error: incidentError, requestId: request.id }, "Failed to persist incident");
+    }
     return reply.code(500).send({ error: "Internal server error" });
   });
 

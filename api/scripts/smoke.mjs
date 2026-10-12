@@ -187,6 +187,28 @@ if (
 const normalSummary = await get("/v1/admin/summary", normal.token);
 assertStatus("normal admin rejection", normalSummary.status, 403);
 
+const forcedError = await post("/v1/dev/errors", {});
+assertStatus("capture development incident", forcedError.status, 500);
+
+const incidents = await get("/v1/admin/incidents?status=OPEN&limit=10", adminLogin.body.token);
+assertStatus("list operational incidents", incidents.status, 200);
+const smokeIncident = incidents.body.incidents.find(
+  (incident) => incident.errorCode === "DEV_SMOKE_ERROR"
+);
+if (!smokeIncident || smokeIncident.route !== "/v1/dev/errors") {
+  throw new Error("list operational incidents: expected sanitized development incident");
+}
+
+const resolvedIncident = await request(`/v1/admin/incidents/${smokeIncident.id}/resolve`, {
+  method: "PATCH",
+  headers: { authorization: `Bearer ${adminLogin.body.token}` },
+  body: JSON.stringify({ resolutionNote: "Verified by the backend smoke suite" })
+});
+assertStatus("resolve operational incident", resolvedIncident.status, 200);
+if (!resolvedIncident.body.incident.resolvedAt || !resolvedIncident.body.incident.resolvedById) {
+  throw new Error("resolve operational incident: expected resolution attribution");
+}
+
 const rallyCancelledByBlock = await post(
   "/v1/rallies",
   {
@@ -475,6 +497,7 @@ console.log(JSON.stringify({
     "admin authorization",
     "founder funnel and operational metrics",
     "normal admin rejection",
+    "operational incident capture and resolution",
     "founder report resolution and user suspension",
     "block enforcement",
     "block cancellation and report relationship integrity",

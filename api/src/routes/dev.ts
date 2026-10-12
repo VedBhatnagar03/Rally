@@ -22,6 +22,13 @@ const profileInclude = {
 };
 
 export async function devRoutes(app: FastifyInstance) {
+  app.post("/errors", async (_request, reply) => {
+    if (!assertDevTools(reply)) return;
+    throw Object.assign(new Error("Development-only smoke-test failure"), {
+      code: "DEV_SMOKE_ERROR"
+    });
+  });
+
   app.get("/profiles", async (_request, reply) => {
     if (!assertDevTools(reply)) return;
 

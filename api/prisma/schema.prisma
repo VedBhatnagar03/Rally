@@ -323,3 +323,21 @@ model AnalyticsEvent {
   @@index([name, createdAt])
   @@index([userId, createdAt])
 }
+
+model OperationalIncident {
+  id             String    @id @default(cuid())
+  requestId      String    @unique
+  method         String
+  route          String
+  statusCode     Int       @default(500)
+  errorName      String
+  errorCode      String?
+  userId         String?
+  resolvedAt     DateTime?
+  resolutionNote String?
+  resolvedById   String?
+  createdAt      DateTime  @default(now())
+
+  @@index([resolvedAt, createdAt])
+  @@index([errorName, createdAt])
+}
