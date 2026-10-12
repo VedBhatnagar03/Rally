@@ -20,13 +20,16 @@ export async function authRoutes(app: FastifyInstance) {
     const accessToken = app.jwt.sign({ sub: user.id, email: user.email, role: user.role });
     const refreshToken = createOpaqueToken();
 
-    await prisma.refreshToken.create({
-      data: {
-        userId: user.id,
-        tokenHash: hashToken(refreshToken),
-        expiresAt: new Date(Date.now() + env.REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000)
-      }
-    });
+    await prisma.$transaction([
+      prisma.refreshToken.create({
+        data: {
+          userId: user.id,
+          tokenHash: hashToken(refreshToken),
+          expiresAt: new Date(Date.now() + env.REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000)
+        }
+      }),
+      prisma.user.update({ where: { id: user.id }, data: { lastActiveAt: new Date() } })
+    ]);
 
     return { token: accessToken, accessToken, refreshToken, user };
   }
