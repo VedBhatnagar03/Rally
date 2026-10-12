@@ -70,6 +70,8 @@ Current foundation:
 - `GET /ready`
 - `POST /v1/auth/register`
 - `POST /v1/auth/verify-email`
+- `POST /v1/auth/forgot-password`
+- `POST /v1/auth/reset-password`
 - `POST /v1/auth/login`
 - `GET /v1/me`
 - `PUT /v1/me/profile`
