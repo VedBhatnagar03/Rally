@@ -14,40 +14,89 @@ npm run dev
 
 ## Verification
 
+Run the static quality gate:
+
 ```bash
 npm run check
 ```
 
-`npm run check` generates Prisma, lints, builds, runs tests, and checks npm advisories at moderate severity or higher.
-
-With the API running against a local database:
+With PostgreSQL and the API running, execute the database-backed golden path:
 
 ```bash
+npm run prisma:deploy
+npm run seed
 npm run smoke
 ```
 
+GitHub Actions runs both paths for every backend pull request. It applies all migrations to a clean PostgreSQL 16 database, starts the compiled server, waits for readiness, and runs the smoke suite.
+
 ## Health Checks
 
-- `GET /health`: process is alive.
-- `GET /ready`: process can reach the database.
+- `GET /health`: the process is alive.
+- `GET /ready`: the process can reach PostgreSQL.
+- The production image includes a Docker health check against `/health`.
+- The platform or load balancer readiness probe must use `/ready`.
 
-## Production Deploy Shape
+## Required Production Configuration
 
-1. Build the Docker image.
-2. Set production environment variables from a secret manager.
-3. Run `npm run prisma:deploy` against the production database.
-4. Start the container as a non-root user.
-5. Point the load balancer readiness probe at `/ready`.
+- `NODE_ENV=production`
+- `DATABASE_URL`: TLS-protected production PostgreSQL URL.
+- `JWT_SECRET`: independently generated secret of at least 32 characters.
+- `CORS_ORIGIN`: exact HTTPS frontend origin; use a comma-separated allowlist only when required.
+- `PUBLIC_APP_URL`: exact HTTPS frontend origin used in email links.
+- `RESEND_API_KEY` and a verified `EMAIL_FROM` sender.
+- `ADMIN_EMAILS`: smallest possible founder/admin allowlist.
+- `DEV_TOOLS_ENABLED=false`.
 
-## Required Production Secrets
+Store secrets in the hosting provider's secret manager. Never place production values in an image, repository, build log, or committed `.env` file.
 
-- `DATABASE_URL`
-- `JWT_SECRET`
-- `CORS_ORIGIN`
-- `ADMIN_EMAILS`
+## Deploy Procedure
 
-## Incident Notes
+1. Confirm backend CI is green on the exact commit being deployed.
+2. Confirm a recent automated database backup exists and record its timestamp.
+3. Review new files under `prisma/migrations`; migrations are forward-only and must be safe for existing data.
+4. Build the immutable Docker image and review the hosting provider's image scan.
+5. Run `npm run prisma:deploy` once as a release task, before starting new application replicas.
+6. Start the image as its built-in non-root `node` user. Do not run migrations independently in every replica.
+7. Wait for `/ready` to return `200`, then shift traffic.
+8. Verify registration, login, founder summary, and incident feed without using development routes.
+9. Watch 5xx logs and `/v1/admin/incidents` during the initial rollout.
 
-- Auth failures are intentionally generic.
-- Password hashes and verification token hashes must never appear in API responses.
-- Audit logs should be retained and exported before deleting production databases.
+## Backup And Restore
+
+The production database provider should own encrypted automatic backups and point-in-time recovery. Before a schema migration, also take an on-demand snapshot and record its identifier in the deployment notes.
+
+For an authorized manual logical backup from a secure operator machine:
+
+```bash
+pg_dump --format=custom --no-owner --no-acl "$DATABASE_URL" --file rally-predeploy.dump
+```
+
+Validate that the output is non-empty and store it in encrypted, access-controlled storage. Never commit a dump; it contains private user and safety data.
+
+Restore only into a new empty database first:
+
+```bash
+pg_restore --clean --if-exists --no-owner --no-acl --dbname "$RESTORE_DATABASE_URL" rally-predeploy.dump
+```
+
+Run `/ready`, migration status, and the smoke suite against the restored environment before any production cutover.
+
+## Failed Deploy And Migration Recovery
+
+- If the application fails but migrations succeeded, stop traffic to the new image and redeploy the previous image. Confirm it remains compatible with the new schema before shifting traffic.
+- Prisma migrations are forward-only in production. Do not delete migration rows or manually mark a failed migration as applied without inspecting the database state.
+- Fix a partially applied or unsafe migration with a reviewed corrective migration. Use `prisma migrate resolve` only when the SQL state is known and documented.
+- Restore from backup only when forward recovery is unsafe. Preserve audit logs, reports, and operational incidents before destructive recovery.
+- After recovery, run `/ready`, the golden-path smoke suite, and inspect open incidents before reopening traffic.
+
+## Incident Response
+
+1. Identify the request ID from the user report, structured server log, or admin incident feed.
+2. Check `/v1/admin/incidents?status=OPEN`; records intentionally exclude bodies, headers, stack traces, query strings, and exception messages.
+3. Correlate the request ID with restricted server logs. Do not paste private logs into public issues.
+4. Contain the problem: suspend affected accounts, pause traffic, or roll back the application when necessary.
+5. Resolve the incident through `PATCH /v1/admin/incidents/:incidentId/resolve` with a concise remediation note.
+6. Rotate any secret that may have been exposed and document the decision timeline.
+
+Authentication failures remain intentionally generic. Audit logs and safety records must be retained according to the beta privacy policy and exported before destructive database recovery.
