@@ -13,6 +13,7 @@
 - Global rate limiting is enabled.
 - Request bodies are capped at 1 MB.
 - Authentication events are written to `AuditLog`.
+- Unexpected 5xx failures create sanitized, admin-only operational incidents.
 - Founder-console routes require a current database-backed `ADMIN` role.
 - Blocks are enforced in discovery and direct Rally creation.
 - Prisma is the database access layer for request handlers.
@@ -20,14 +21,14 @@
 
 ## Must Do Before Production
 
-- Add a real email provider for verification delivery.
+- Verify the production Resend sender domain and delivery path.
 - Use HTTPS-only secure cookies if refresh tokens are enabled for browser sessions.
 - Add per-route abuse controls for auth endpoints.
 - Add centralized secret management.
-- Add database backups and migration rollback procedure.
-- Add Sentry or equivalent error monitoring.
-- Add structured security logging retention.
-- Add account deletion/export flows before a public launch.
+- Enable encrypted automated backups and test a restore using the runbook.
+- Add external alert delivery for new operational incidents.
+- Define structured security and audit-log retention periods.
+- Add a user data-export workflow before a public launch.
 
 ## Reporting Issues
 

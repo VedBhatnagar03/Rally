@@ -14,6 +14,29 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: rally
+          POSTGRES_USER: rally
+          POSTGRES_PASSWORD: rally_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U rally -d rally"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://rally:rally_password@localhost:5432/rally
+      JWT_SECRET: ci-only-secret-with-at-least-32-characters
+      CORS_ORIGIN: http://localhost:3000
+      PUBLIC_APP_URL: http://localhost:3000
+      ADMIN_EMAILS: naman.test@illinois.edu
+      RALLY_SEED_ADMIN_PASSWORD: correct-horse-battery-staple
+      DEV_TOOLS_ENABLED: "true"
     defaults:
       run:
         working-directory: api
@@ -46,6 +69,32 @@ jobs:
 
       - name: Audit dependencies
         run: npm audit --audit-level=moderate
+
+      - name: Apply database migrations
+        run: npm run prisma:deploy
+
+      - name: Seed smoke-test data
+        run: npm run seed
+
+      - name: Start compiled API
+        run: |
+          npm start > /tmp/rally-api.log 2>&1 &
+          echo $! > /tmp/rally-api.pid
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:4000/ready > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/rally-api.log
+          exit 1
+
+      - name: Run database-backed smoke suite
+        run: npm run smoke
+
+      - name: Show API log on failure
+        if: failure()
+        run: cat /tmp/rally-api.log || true
 
       - name: Build Docker image
         run: docker build .
