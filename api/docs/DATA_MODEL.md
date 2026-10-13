@@ -14,7 +14,7 @@
 - `AvailabilityWindow`: recurring weekly availability.
 - `Venue`: UIUC-compatible court locations and handoff links.
 - `Rally`: explicit pending, accepted, scheduled, completed/cancelled meetup state with lifecycle timestamps and cancellation attribution; only one active Rally may exist per user pair.
-- `RallyFeedback`: private post-Rally feedback.
+- `RallyFeedback`: private post-Rally feedback with a one-to-one safety escalation when needed.
 - `Notification`: durable, per-user Rally lifecycle events with read state and duplicate prevention.
 - `Block`: immediate discovery and interaction exclusion.
 - `Report`: safety/moderation queue with status, resolution note, timestamp and resolving administrator.
@@ -25,6 +25,7 @@
 ## Privacy Notes
 
 - Feedback is private by default.
+- A negative post-Rally safety check creates one confidential, feedback-linked report for founder review, even when a client retries submission.
 - Reports are admin/moderation data only.
 - Blocks affect recommendations immediately and cancel active Rallies between the users.
 - Rally-linked reports must name the other participant in a Rally the reporter actually joined.
