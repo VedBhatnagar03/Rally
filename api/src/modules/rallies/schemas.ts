@@ -14,7 +14,7 @@ export const respondToRallySchema = z.object({
 });
 
 export const courtBookingSchema = z.object({
-  courtStatus: z.nativeEnum(CourtBookingStatus),
+  courtStatus: z.enum([CourtBookingStatus.BOOKED, CourtBookingStatus.UNAVAILABLE]),
   courtNumber: z.string().trim().max(40).optional(),
   bookingReference: z.string().trim().max(160).optional()
 });

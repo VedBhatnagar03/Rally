@@ -17,6 +17,7 @@ import {
   validateRallyWindow
 } from "../modules/rallies/integrity.js";
 import { rallyReadInclude, toRallyView } from "../modules/rallies/presentation.js";
+import { isSameConfirmedBooking } from "../modules/rallies/booking-integrity.js";
 import { writeAuditLog } from "../utils/audit.js";
 
 const activeRallyStatuses = ["PENDING", "ACCEPTED", "SCHEDULED"] as const;
@@ -311,7 +312,10 @@ export async function rallyRoutes(app: FastifyInstance) {
     const params = request.params as { rallyId: string };
     const body = courtBookingSchema.parse(request.body);
 
-    const rally = await prisma.rally.findUnique({ where: { id: params.rallyId } });
+    const rally = await prisma.rally.findUnique({
+      where: { id: params.rallyId },
+      include: { venue: true }
+    });
 
     if (!rally || (rally.senderId !== request.user.sub && rally.receiverId !== request.user.sub)) {
       return reply.code(404).send({ error: "Rally not found" });
@@ -321,16 +325,40 @@ export async function rallyRoutes(app: FastifyInstance) {
       return reply.code(409).send({ error: "Court booking can only be updated after scheduling" });
     }
 
+    if (rally.courtStatus === "BOOKED") {
+      if (isSameConfirmedBooking(rally, request.user.sub, body)) return { rally };
+      return reply.code(409).send({ error: "Confirmed court booking cannot be changed" });
+    }
+
     const transitioned = await prisma.rally.updateMany({
-      where: { id: rally.id, status: "SCHEDULED" },
-      data: {
-        courtStatus: body.courtStatus,
-        courtNumber: body.courtNumber,
-        bookingReference: body.bookingReference,
-        bookingOwnerId: request.user.sub
-      }
+      where: {
+        id: rally.id,
+        status: "SCHEDULED",
+        courtStatus: { in: ["NEEDS_USER_ACTION", "UNAVAILABLE"] }
+      },
+      data:
+        body.courtStatus === "BOOKED"
+          ? {
+              courtStatus: "BOOKED",
+              courtNumber: body.courtNumber,
+              bookingReference: body.bookingReference,
+              bookingOwnerId: request.user.sub
+            }
+          : {
+              courtStatus: "UNAVAILABLE",
+              courtNumber: null,
+              bookingReference: null,
+              bookingOwnerId: null
+            }
     });
     if (transitioned.count !== 1) {
+      const current = await prisma.rally.findUnique({
+        where: { id: rally.id },
+        include: { venue: true }
+      });
+      if (current && isSameConfirmedBooking(current, request.user.sub, body)) {
+        return { rally: current };
+      }
       return reply.code(409).send({ error: "Rally is no longer available for court booking" });
     }
 
