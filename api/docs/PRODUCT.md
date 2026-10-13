@@ -14,7 +14,7 @@ Must ship:
 
 - Illinois email registration and verification.
 - 18+ declaration in onboarding copy and product policy.
-- Profile with name, class year, major, gender, dating preferences, intent, bio, sports, skill, intensity, availability.
+- Profile with name, photos, class year, major, gender, dating preferences, intent, bio, prompts, interests, sports, skill, intensity, availability.
 - Curated discovery with readable reasons.
 - Send Rally, accept, decline, cancel, scheduled/upcoming state.
 - Shared time suggestions from availability overlap.

@@ -13,7 +13,8 @@ function candidate(overrides: Partial<MatchCandidate> = {}): MatchCandidate {
       interestedIn: ["MAN"],
       datingIntent: "DATING",
       major: "Computer Science",
-      classYear: "Junior"
+      classYear: "Junior",
+      interests: ["Live music", "Coffee"]
     },
     sports: [{ sport: "TENNIS", skillLevel: "INTERMEDIATE", intensity: 3, favorite: true }],
     availability: [{ dayOfWeek: 2, startTime: "18:00", endTime: "20:00" }],
@@ -32,7 +33,8 @@ const compatibleMan = candidate({
     interestedIn: ["WOMAN"],
     datingIntent: "DATING",
     major: "Computer Science",
-    classYear: "Junior"
+    classYear: "Junior",
+    interests: ["Coffee", "Cooking"]
   },
   availability: [{ dayOfWeek: 2, startTime: "18:30", endTime: "20:00" }]
 });

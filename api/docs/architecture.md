@@ -8,6 +8,7 @@ Rally does not scrape or automate Active Illini. The backend suggests the best s
 
 - Auth: UIUC-only registration, versioned 18+/policy consent, Resend-backed verification and password recovery, login, short-lived JWT issuance, rotating refresh tokens and logout revocation.
 - Profile: campus identity, dating intent, gender preferences, trust profile.
+- Discovery profile: reviewed prompts, short interests, ordered photos and a privacy-shaped candidate response.
 - Sports: racket sport interests, skill, intensity, favorites.
 - Availability: weekly time windows used by the matching engine.
 - Matching: deterministic recommendation scoring for the hackathon MVP.

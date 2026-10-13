@@ -15,7 +15,7 @@ function assertDevTools(reply: FastifyReply) {
 }
 
 const profileInclude = {
-  profile: true,
+  profile: { include: { prompts: { orderBy: { sortOrder: "asc" as const } } } },
   sportProfiles: true,
   availability: true,
   photos: { orderBy: { sortOrder: "asc" as const } }

@@ -25,6 +25,7 @@ type MatchProfile = {
   datingIntent: DatingIntent;
   major: string | null;
   classYear: string | null;
+  interests: string[];
 };
 
 export type MatchCandidate = {
@@ -149,17 +150,26 @@ function skillCompatibility(a: SkillLevel, b: SkillLevel) {
 
 function profileCompatibility(a: MatchProfile, b: MatchProfile) {
   let score = 0;
-  if (a.classYear && a.classYear === b.classYear) score += 0.5;
-  if (a.major && a.major === b.major) score += 0.5;
+  if (a.classYear && a.classYear === b.classYear) score += 0.35;
+  if (a.major && a.major === b.major) score += 0.35;
+  if (sharedInterests(a, b).length > 0) score += 0.3;
   return score;
 }
 
 function profileOverlapDetail(a: MatchProfile, b: MatchProfile) {
   const overlap = [
     a.classYear && a.classYear === b.classYear ? `same year (${a.classYear})` : null,
-    a.major && a.major === b.major ? `same major (${a.major})` : null
+    a.major && a.major === b.major ? `same major (${a.major})` : null,
+    sharedInterests(a, b).length > 0
+      ? `shared interests (${sharedInterests(a, b).join(", ")})`
+      : null
   ].filter(Boolean);
   return overlap.join(", ") || "no profile overlap";
+}
+
+function sharedInterests(a: MatchProfile, b: MatchProfile) {
+  const theirs = new Set(b.interests.map((interest) => interest.toLowerCase()));
+  return a.interests.filter((interest) => theirs.has(interest.toLowerCase())).slice(0, 3);
 }
 
 function buildReasons(
