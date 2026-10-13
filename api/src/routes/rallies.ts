@@ -12,6 +12,7 @@ import {
 import { suggestRallySlots } from "../modules/scheduling/scheduler.js";
 import { passesHardFilters } from "../modules/matching/matcher.js";
 import { rallyWindowErrorMessage, validateRallyWindow } from "../modules/rallies/integrity.js";
+import { rallyReadInclude, toRallyView } from "../modules/rallies/presentation.js";
 import { writeAuditLog } from "../utils/audit.js";
 
 const activeRallyStatuses = ["PENDING", "ACCEPTED", "SCHEDULED"] as const;
@@ -22,15 +23,26 @@ export async function rallyRoutes(app: FastifyInstance) {
       where: {
         OR: [{ senderId: request.user.sub }, { receiverId: request.user.sub }]
       },
-      include: {
-        sender: { select: { id: true, email: true, profile: true } },
-        receiver: { select: { id: true, email: true, profile: true } },
-        venue: true
-      },
+      include: rallyReadInclude,
       orderBy: { createdAt: "desc" }
     });
 
-    return { rallies };
+    return { rallies: rallies.map(toRallyView) };
+  });
+
+  app.get("/:rallyId", { preHandler: app.authenticate }, async (request, reply) => {
+    const params = request.params as { rallyId: string };
+    const rally = await prisma.rally.findFirst({
+      where: {
+        id: params.rallyId,
+        OR: [{ senderId: request.user.sub }, { receiverId: request.user.sub }]
+      },
+      include: rallyReadInclude
+    });
+
+    if (!rally) return reply.code(404).send({ error: "Rally not found" });
+
+    return { rally: toRallyView(rally) };
   });
 
   app.post("/", { preHandler: app.authenticate }, async (request, reply) => {
