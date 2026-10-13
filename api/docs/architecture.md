@@ -12,6 +12,7 @@ Rally does not scrape or automate Active Illini. The backend suggests the best s
 - Sports: racket sport interests, skill, intensity, favorites.
 - Availability: weekly time windows used by the matching engine.
 - Matching: deterministic recommendation scoring for the hackathon MVP.
+- Discovery eligibility: blocked users and pairs with a pending, accepted or scheduled Rally are removed before scoring; terminal Rally pairs may be recommended again.
 - Rallies: invite, accept, decline, booking handoff, and completion state.
 - Venues: UIUC-specific court options and booking guidance.
 - Audit: security-relevant event trail.

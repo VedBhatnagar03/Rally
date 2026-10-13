@@ -16,6 +16,7 @@ Must ship:
 - 18+ declaration in onboarding copy and product policy.
 - Profile with name, photos, class year, major, gender, dating preferences, intent, bio, prompts, interests, sports, skill, intensity, availability.
 - Curated discovery with readable reasons.
+- Discovery shows actionable candidates rather than people who already have an active Rally with the viewer.
 - Send Rally, accept, decline, cancel, scheduled/upcoming state.
 - Completion and post-Rally feedback unlock only once the scheduled Rally has started.
 - Shared time suggestions from availability overlap.
