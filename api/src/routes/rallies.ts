@@ -196,13 +196,20 @@ export async function rallyRoutes(app: FastifyInstance) {
       return reply.code(409).send({ error: "Rally has already been resolved" });
     }
 
-    const updated = await prisma.rally.update({
-      where: { id: rally.id },
+    const transitioned = await prisma.rally.updateMany({
+      where: { id: rally.id, receiverId: request.user.sub, status: "PENDING" },
       data: {
         status: body.status,
         acceptedAt: body.status === "ACCEPTED" ? new Date() : undefined,
         courtStatus: "NOT_STARTED"
-      },
+      }
+    });
+    if (transitioned.count !== 1) {
+      return reply.code(409).send({ error: "Rally has already been resolved" });
+    }
+
+    const updated = await prisma.rally.findUniqueOrThrow({
+      where: { id: rally.id },
       include: { venue: true }
     });
 
@@ -231,8 +238,8 @@ export async function rallyRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "Venue is not compatible with this Rally sport" });
     }
 
-    const updated = await prisma.rally.update({
-      where: { id: rally.id },
+    const transitioned = await prisma.rally.updateMany({
+      where: { id: rally.id, status: "ACCEPTED" },
       data: {
         status: "SCHEDULED",
         scheduledAt: new Date(),
@@ -240,7 +247,14 @@ export async function rallyRoutes(app: FastifyInstance) {
         proposedEndAt: body.proposedEndAt,
         venueId: body.venueId,
         courtStatus: "NEEDS_USER_ACTION"
-      },
+      }
+    });
+    if (transitioned.count !== 1) {
+      return reply.code(409).send({ error: "Rally is no longer available for scheduling" });
+    }
+
+    const updated = await prisma.rally.findUniqueOrThrow({
+      where: { id: rally.id },
       include: { venue: true }
     });
 
@@ -261,14 +275,21 @@ export async function rallyRoutes(app: FastifyInstance) {
       return reply.code(409).send({ error: "Court booking can only be updated after scheduling" });
     }
 
-    const updated = await prisma.rally.update({
-      where: { id: rally.id },
+    const transitioned = await prisma.rally.updateMany({
+      where: { id: rally.id, status: "SCHEDULED" },
       data: {
         courtStatus: body.courtStatus,
         courtNumber: body.courtNumber,
         bookingReference: body.bookingReference,
         bookingOwnerId: request.user.sub
-      },
+      }
+    });
+    if (transitioned.count !== 1) {
+      return reply.code(409).send({ error: "Rally is no longer available for court booking" });
+    }
+
+    const updated = await prisma.rally.findUniqueOrThrow({
+      where: { id: rally.id },
       include: { venue: true }
     });
 
@@ -287,9 +308,21 @@ export async function rallyRoutes(app: FastifyInstance) {
       return reply.code(409).send({ error: "Only scheduled Rallies can be completed" });
     }
 
-    const updated = await prisma.rally.update({
+    if (rally.status === "SCHEDULED") {
+      const transitioned = await prisma.rally.updateMany({
+        where: { id: rally.id, status: "SCHEDULED" },
+        data: { status: "COMPLETED", completedAt: new Date() }
+      });
+      if (transitioned.count !== 1) {
+        const current = await prisma.rally.findUnique({ where: { id: rally.id } });
+        if (current?.status !== "COMPLETED") {
+          return reply.code(409).send({ error: "Rally is no longer available for completion" });
+        }
+      }
+    }
+
+    const updated = await prisma.rally.findUniqueOrThrow({
       where: { id: rally.id },
-      data: { status: "COMPLETED", completedAt: rally.completedAt ?? new Date() },
       include: { venue: true }
     });
 
@@ -309,15 +342,22 @@ export async function rallyRoutes(app: FastifyInstance) {
       return reply.code(409).send({ error: "Rally can no longer be cancelled" });
     }
 
-    const updated = await prisma.rally.update({
-      where: { id: rally.id },
+    const transitioned = await prisma.rally.updateMany({
+      where: { id: rally.id, status: { in: ["PENDING", "ACCEPTED", "SCHEDULED"] } },
       data: {
         status: "CANCELLED",
         cancelledAt: new Date(),
         cancelledById: request.user.sub,
         cancellationReason: body.reason,
         courtStatus: "NOT_STARTED"
-      },
+      }
+    });
+    if (transitioned.count !== 1) {
+      return reply.code(409).send({ error: "Rally can no longer be cancelled" });
+    }
+
+    const updated = await prisma.rally.findUniqueOrThrow({
+      where: { id: rally.id },
       include: { venue: true }
     });
 
