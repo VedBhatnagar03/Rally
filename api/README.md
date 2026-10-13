@@ -82,9 +82,15 @@ Current foundation:
 - `GET /v1/rallies/suggestions/:receiverId`
 - `POST /v1/rallies`
 - `POST /v1/rallies/:rallyId/respond`
+- `POST /v1/rallies/:rallyId/schedule`
+- `POST /v1/rallies/:rallyId/complete`
+- `POST /v1/rallies/:rallyId/cancel`
 - `GET /v1/rallies`
 - `POST /v1/rallies/:rallyId/court-booking`
 - `POST /v1/feedback/rallies/:rallyId`
+- `GET /v1/notifications`
+- `PATCH /v1/notifications/:notificationId/read`
+- `POST /v1/notifications/read-all`
 - `POST /v1/safety/blocks`
 - `POST /v1/safety/reports`
 - `POST /v1/analytics/events`

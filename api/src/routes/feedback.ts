@@ -41,28 +41,34 @@ export async function feedbackRoutes(app: FastifyInstance) {
       return reply.code(409).send({ error: "Feedback can only be submitted after a completed Rally" });
     }
 
-    const feedback = await prisma.rallyFeedback.upsert({
-      where: {
-        rallyId_userId: {
+    const feedback = await prisma.$transaction(async (tx) => {
+      const saved = await tx.rallyFeedback.upsert({
+        where: {
+          rallyId_userId: {
+            rallyId: rally.id,
+            userId: request.user.sub
+          }
+        },
+        create: {
           rallyId: rally.id,
-          userId: request.user.sub
-        }
-      },
-      create: {
-        rallyId: rally.id,
-        userId: request.user.sub,
-        ...body
-      },
-      update: body
-    });
-
-    const bothFeedback = await prisma.rallyFeedback.count({ where: { rallyId: rally.id } });
-    if (bothFeedback >= 2) {
-      await prisma.rally.update({
-        where: { id: rally.id },
-        data: { status: "COMPLETED" }
+          userId: request.user.sub,
+          ...body
+        },
+        update: body
       });
-    }
+      const responses = await tx.rallyFeedback.findMany({ where: { rallyId: rally.id } });
+      if (responses.length >= 2 && responses.every((response) => response.rallyAgain)) {
+        await tx.notification.createMany({
+          data: [rally.senderId, rally.receiverId].map((userId) => ({
+            userId,
+            type: "MUTUAL_RALLY_AGAIN" as const,
+            rallyId: rally.id
+          })),
+          skipDuplicates: true
+        });
+      }
+      return saved;
+    });
 
     await writeAuditLog({
       userId: request.user.sub,

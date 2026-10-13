@@ -111,16 +111,22 @@ export async function rallyRoutes(app: FastifyInstance) {
 
     let rally;
     try {
-      rally = await prisma.rally.create({
-        data: {
-          senderId: request.user.sub,
-          receiverId: body.receiverId,
-          sport: body.sport,
-          proposedStartAt: body.proposedStartAt,
-          proposedEndAt: body.proposedEndAt,
-          venueId: body.venueId
-        },
-        include: { venue: true }
+      rally = await prisma.$transaction(async (tx) => {
+        const created = await tx.rally.create({
+          data: {
+            senderId: request.user.sub,
+            receiverId: body.receiverId,
+            sport: body.sport,
+            proposedStartAt: body.proposedStartAt,
+            proposedEndAt: body.proposedEndAt,
+            venueId: body.venueId
+          },
+          include: { venue: true }
+        });
+        await tx.notification.create({
+          data: { userId: body.receiverId, type: "RALLY_RECEIVED", rallyId: created.id }
+        });
+        return created;
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
@@ -196,13 +202,25 @@ export async function rallyRoutes(app: FastifyInstance) {
       return reply.code(409).send({ error: "Rally has already been resolved" });
     }
 
-    const transitioned = await prisma.rally.updateMany({
-      where: { id: rally.id, receiverId: request.user.sub, status: "PENDING" },
-      data: {
-        status: body.status,
-        acceptedAt: body.status === "ACCEPTED" ? new Date() : undefined,
-        courtStatus: "NOT_STARTED"
+    const transitioned = await prisma.$transaction(async (tx) => {
+      const result = await tx.rally.updateMany({
+        where: { id: rally.id, receiverId: request.user.sub, status: "PENDING" },
+        data: {
+          status: body.status,
+          acceptedAt: body.status === "ACCEPTED" ? new Date() : undefined,
+          courtStatus: "NOT_STARTED"
+        }
+      });
+      if (result.count === 1) {
+        await tx.notification.create({
+          data: {
+            userId: rally.senderId,
+            type: body.status === "ACCEPTED" ? "RALLY_ACCEPTED" : "RALLY_DECLINED",
+            rallyId: rally.id
+          }
+        });
       }
+      return result;
     });
     if (transitioned.count !== 1) {
       return reply.code(409).send({ error: "Rally has already been resolved" });
@@ -238,16 +256,28 @@ export async function rallyRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "Venue is not compatible with this Rally sport" });
     }
 
-    const transitioned = await prisma.rally.updateMany({
-      where: { id: rally.id, status: "ACCEPTED" },
-      data: {
-        status: "SCHEDULED",
-        scheduledAt: new Date(),
-        proposedStartAt: body.proposedStartAt,
-        proposedEndAt: body.proposedEndAt,
-        venueId: body.venueId,
-        courtStatus: "NEEDS_USER_ACTION"
+    const transitioned = await prisma.$transaction(async (tx) => {
+      const result = await tx.rally.updateMany({
+        where: { id: rally.id, status: "ACCEPTED" },
+        data: {
+          status: "SCHEDULED",
+          scheduledAt: new Date(),
+          proposedStartAt: body.proposedStartAt,
+          proposedEndAt: body.proposedEndAt,
+          venueId: body.venueId,
+          courtStatus: "NEEDS_USER_ACTION"
+        }
+      });
+      if (result.count === 1) {
+        await tx.notification.create({
+          data: {
+            userId: request.user.sub === rally.senderId ? rally.receiverId : rally.senderId,
+            type: "RALLY_SCHEDULED",
+            rallyId: rally.id
+          }
+        });
       }
+      return result;
     });
     if (transitioned.count !== 1) {
       return reply.code(409).send({ error: "Rally is no longer available for scheduling" });
@@ -309,9 +339,22 @@ export async function rallyRoutes(app: FastifyInstance) {
     }
 
     if (rally.status === "SCHEDULED") {
-      const transitioned = await prisma.rally.updateMany({
-        where: { id: rally.id, status: "SCHEDULED" },
-        data: { status: "COMPLETED", completedAt: new Date() }
+      const transitioned = await prisma.$transaction(async (tx) => {
+        const result = await tx.rally.updateMany({
+          where: { id: rally.id, status: "SCHEDULED" },
+          data: { status: "COMPLETED", completedAt: new Date() }
+        });
+        if (result.count === 1) {
+          await tx.notification.createMany({
+            data: [rally.senderId, rally.receiverId].map((userId) => ({
+              userId,
+              type: "RALLY_COMPLETED" as const,
+              rallyId: rally.id
+            })),
+            skipDuplicates: true
+          });
+        }
+        return result;
       });
       if (transitioned.count !== 1) {
         const current = await prisma.rally.findUnique({ where: { id: rally.id } });
@@ -342,15 +385,27 @@ export async function rallyRoutes(app: FastifyInstance) {
       return reply.code(409).send({ error: "Rally can no longer be cancelled" });
     }
 
-    const transitioned = await prisma.rally.updateMany({
-      where: { id: rally.id, status: { in: ["PENDING", "ACCEPTED", "SCHEDULED"] } },
-      data: {
-        status: "CANCELLED",
-        cancelledAt: new Date(),
-        cancelledById: request.user.sub,
-        cancellationReason: body.reason,
-        courtStatus: "NOT_STARTED"
+    const transitioned = await prisma.$transaction(async (tx) => {
+      const result = await tx.rally.updateMany({
+        where: { id: rally.id, status: { in: ["PENDING", "ACCEPTED", "SCHEDULED"] } },
+        data: {
+          status: "CANCELLED",
+          cancelledAt: new Date(),
+          cancelledById: request.user.sub,
+          cancellationReason: body.reason,
+          courtStatus: "NOT_STARTED"
+        }
+      });
+      if (result.count === 1) {
+        await tx.notification.create({
+          data: {
+            userId: request.user.sub === rally.senderId ? rally.receiverId : rally.senderId,
+            type: "RALLY_CANCELLED",
+            rallyId: rally.id
+          }
+        });
       }
+      return result;
     });
     if (transitioned.count !== 1) {
       return reply.code(409).send({ error: "Rally can no longer be cancelled" });

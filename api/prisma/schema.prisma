@@ -84,6 +84,16 @@ enum ReportCategory {
   OTHER
 }
 
+enum NotificationType {
+  RALLY_RECEIVED
+  RALLY_ACCEPTED
+  RALLY_DECLINED
+  RALLY_SCHEDULED
+  RALLY_CANCELLED
+  RALLY_COMPLETED
+  MUTUAL_RALLY_AGAIN
+}
+
 model User {
   id           String     @id @default(cuid())
   email        String     @unique
@@ -115,6 +125,7 @@ model User {
   reportsReceived         Report[]                 @relation("Reported")
   feedback                RallyFeedback[]
   analyticsEvents         AnalyticsEvent[]
+  notifications           Notification[]
 
   @@index([lastActiveAt])
 }
@@ -269,6 +280,7 @@ model Rally {
   venue    Venue?          @relation(fields: [venueId], references: [id])
   feedback RallyFeedback[]
   reports  Report[]
+  notifications Notification[]
 
   @@index([senderId, status])
   @@index([receiverId, status])
@@ -339,6 +351,21 @@ model AnalyticsEvent {
 
   @@index([name, createdAt])
   @@index([userId, createdAt])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  rallyId   String
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rally Rally @relation(fields: [rallyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type, rallyId])
+  @@index([userId, readAt, createdAt])
 }
 
 model OperationalIncident {
