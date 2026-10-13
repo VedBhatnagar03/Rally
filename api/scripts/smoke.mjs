@@ -982,6 +982,29 @@ if (cancellationCount !== 1) {
   throw new Error("atomic cancellation notification: expected one other-participant notification");
 }
 
+const firstHistoryPage = await get("/v1/rallies?limit=1", schedulerA.token);
+assertStatus("list first Rally history page", firstHistoryPage.status, 200);
+if (firstHistoryPage.body.rallies.length !== 1 || !firstHistoryPage.body.nextCursor) {
+  throw new Error("Rally history pagination: expected one item and a next cursor");
+}
+const secondHistoryPage = await get(
+  `/v1/rallies?limit=1&cursor=${firstHistoryPage.body.nextCursor}`,
+  schedulerA.token
+);
+assertStatus("list second Rally history page", secondHistoryPage.status, 200);
+if (
+  secondHistoryPage.body.rallies.length !== 1 ||
+  secondHistoryPage.body.rallies[0].id === firstHistoryPage.body.rallies[0].id
+) {
+  throw new Error("Rally history pagination: expected a distinct second item");
+}
+
+const foreignHistoryCursor = await get(
+  `/v1/rallies?cursor=${blockedPairRally.id}`,
+  schedulerA.token
+);
+assertStatus("reject another participant's Rally cursor", foreignHistoryCursor.status, 400);
+
 const acceptCancelled = await post(
   `/v1/rallies/${cancellable.body.rally.id}/respond`,
   { status: "ACCEPTED" },
@@ -1010,6 +1033,7 @@ console.log(JSON.stringify({
     "block enforcement",
     "block cancellation and report relationship integrity",
     "privacy-safe participant-authorized Rally reads",
+    "bounded participant-scoped Rally history",
     "account deactivation, deletion, and unblock",
     "privacy-safe account data export",
     "sanitized profile photo upload and ownership",

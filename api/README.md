@@ -91,7 +91,7 @@ Current foundation:
 - `POST /v1/rallies/:rallyId/schedule`
 - `POST /v1/rallies/:rallyId/complete`
 - `POST /v1/rallies/:rallyId/cancel`
-- `GET /v1/rallies`
+- `GET /v1/rallies` (participant-scoped cursor pagination)
 - `GET /v1/rallies/:rallyId`
 - `POST /v1/rallies/:rallyId/court-booking`
 - `POST /v1/feedback/rallies/:rallyId`

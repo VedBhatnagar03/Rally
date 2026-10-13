@@ -5,6 +5,7 @@ import {
   cancelRallySchema,
   courtBookingSchema,
   createRallySchema,
+  rallyListQuerySchema,
   respondToRallySchema,
   scheduleSuggestionParamsSchema,
   selectScheduleSchema
@@ -26,16 +27,35 @@ import { writeAuditLog } from "../utils/audit.js";
 const activeRallyStatuses = ["PENDING", "ACCEPTED", "SCHEDULED"] as const;
 
 export async function rallyRoutes(app: FastifyInstance) {
-  app.get("/", { preHandler: app.authenticate }, async (request) => {
+  app.get("/", { preHandler: app.authenticate }, async (request, reply) => {
+    const { cursor, limit } = rallyListQuerySchema.parse(request.query);
+    const participantWhere = {
+      OR: [{ senderId: request.user.sub }, { receiverId: request.user.sub }]
+    };
+
+    if (cursor) {
+      const ownsCursor = await prisma.rally.count({
+        where: { id: cursor, ...participantWhere }
+      });
+      if (ownsCursor !== 1) return reply.code(400).send({ error: "Invalid Rally cursor" });
+    }
+
     const rallies = await prisma.rally.findMany({
-      where: {
-        OR: [{ senderId: request.user.sub }, { receiverId: request.user.sub }]
-      },
+      where: participantWhere,
       include: rallyReadInclude,
-      orderBy: { createdAt: "desc" }
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: limit + 1,
+      cursor: cursor ? { id: cursor } : undefined,
+      skip: cursor ? 1 : undefined
     });
 
-    return { rallies: rallies.map(toRallyView) };
+    const hasMore = rallies.length > limit;
+    const page = hasMore ? rallies.slice(0, limit) : rallies;
+
+    return {
+      rallies: page.map(toRallyView),
+      nextCursor: hasMore ? page.at(-1)?.id ?? null : null
+    };
   });
 
   app.get("/:rallyId", { preHandler: app.authenticate }, async (request, reply) => {

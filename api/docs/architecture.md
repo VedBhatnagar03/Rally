@@ -26,6 +26,7 @@ Rally does not scrape or automate Active Illini. The backend suggests the best s
 - Court booking: clients can report booked or unavailable outcomes, and confirmed booking ownership/details are immutable under retries and concurrent updates.
 - Booking cancellation handoff: cancelling a Rally preserves confirmed external reservation details so the booking owner can still cancel it manually; unconfirmed handoffs are cleared.
 - Rally reads: list and detail endpoints use an explicit participant allowlist so email, dating filters, availability and trust data never leak through nested records.
+- Rally history: participant-scoped cursors and capped page sizes keep nested history reads bounded as the beta grows.
 - Post-Rally safety: a negative safety response creates a confidential, idempotent founder-queue report linked to the feedback record.
 - Feedback integrity: the first post-Rally decision is final; exact retries succeed while conflicting resubmissions are rejected.
 - Notifications: durable in-app lifecycle events are created in the same transaction as Rally state changes and deduplicated per recipient, event type and Rally.
