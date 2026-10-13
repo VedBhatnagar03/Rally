@@ -696,12 +696,54 @@ if (scheduledNotificationCount !== 1) {
   throw new Error("atomic schedule notification: expected exactly one other-participant notification");
 }
 
-const booked = await post(
+const invalidBookingState = await post(
   `/v1/rallies/${rally.body.rally.id}/court-booking`,
-  { courtStatus: "BOOKED", bookingReference: "smoke-test-booking" },
+  { courtStatus: "NEEDS_USER_ACTION" },
   schedulerA.token
 );
-assertStatus("persist court booking", booked.status, 200);
+assertStatus("reject internal court state", invalidBookingState.status, 400);
+
+const unavailableBooking = await post(
+  `/v1/rallies/${rally.body.rally.id}/court-booking`,
+  { courtStatus: "UNAVAILABLE" },
+  schedulerA.token
+);
+assertStatus("record unavailable court", unavailableBooking.status, 200);
+
+const bookingAttempts = await Promise.all([
+  post(
+    `/v1/rallies/${rally.body.rally.id}/court-booking`,
+    { courtStatus: "BOOKED", bookingReference: "booking-a" },
+    schedulerA.token
+  ),
+  post(
+    `/v1/rallies/${rally.body.rally.id}/court-booking`,
+    { courtStatus: "BOOKED", bookingReference: "booking-b" },
+    schedulerB.token
+  )
+]);
+const bookingStatuses = bookingAttempts.map(({ status }) => status).sort();
+if (bookingStatuses[0] !== 200 || bookingStatuses[1] !== 409) {
+  throw new Error(`atomic court booking: expected one 200 and one 409, got ${bookingStatuses.join(", ")}`);
+}
+const bookingWinnerIndex = bookingAttempts.findIndex(({ status }) => status === 200);
+const bookingWinner = bookingWinnerIndex === 0 ? schedulerA : schedulerB;
+const bookingLoser = bookingWinnerIndex === 0 ? schedulerB : schedulerA;
+const winningReference = bookingWinnerIndex === 0 ? "booking-a" : "booking-b";
+
+const repeatedBooking = await post(
+  `/v1/rallies/${rally.body.rally.id}/court-booking`,
+  { courtStatus: "BOOKED", bookingReference: winningReference },
+  bookingWinner.token
+);
+assertStatus("retry identical court booking", repeatedBooking.status, 200);
+
+const overwrittenBooking = await post(
+  `/v1/rallies/${rally.body.rally.id}/court-booking`,
+  { courtStatus: "BOOKED", bookingReference: winningReference },
+  bookingLoser.token
+);
+assertStatus("reject court booking owner overwrite", overwrittenBooking.status, 409);
 
 const earlyCompletion = await post(
   `/v1/rallies/${rally.body.rally.id}/complete`,
@@ -932,6 +974,7 @@ console.log(JSON.stringify({
     "persisted rally lifecycle",
     "duplicate and invalid Rally rejection",
     "explicit scheduling and cancellation states",
+    "atomic immutable court booking ownership",
     "scheduled-start completion boundary",
     "atomic concurrent Rally transitions",
     "persisted feedback outcome",
