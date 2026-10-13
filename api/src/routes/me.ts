@@ -22,6 +22,115 @@ export async function meRoutes(app: FastifyInstance) {
     });
   });
 
+  app.get(
+    "/export",
+    {
+      preHandler: app.authenticate,
+      config: { rateLimit: { max: 3, timeWindow: "1 day" } }
+    },
+    async (request, reply) => {
+      await writeAuditLog({ userId: request.user.sub, action: "account.data_export", request });
+
+      const [account, rallies, feedback, blocks, reports, analyticsEvents, auditLogs] = await Promise.all([
+        prisma.user.findUniqueOrThrow({
+          where: { id: request.user.sub },
+          select: {
+            id: true,
+            email: true,
+            status: true,
+            role: true,
+            createdAt: true,
+            updatedAt: true,
+            lastActiveAt: true,
+            deactivatedAt: true,
+            profile: true,
+            sportProfiles: true,
+            availability: true,
+            photos: { orderBy: { sortOrder: "asc" } }
+          }
+        }),
+        prisma.rally.findMany({
+          where: {
+            OR: [{ senderId: request.user.sub }, { receiverId: request.user.sub }]
+          },
+          select: {
+            id: true,
+            senderId: true,
+            receiverId: true,
+            sport: true,
+            proposedStartAt: true,
+            proposedEndAt: true,
+            status: true,
+            courtStatus: true,
+            courtNumber: true,
+            bookingOwnerId: true,
+            bookingReference: true,
+            cancelledAt: true,
+            cancelledById: true,
+            cancellationReason: true,
+            acceptedAt: true,
+            scheduledAt: true,
+            completedAt: true,
+            createdAt: true,
+            updatedAt: true,
+            venue: true,
+            sender: { select: { id: true, profile: { select: { displayName: true } } } },
+            receiver: { select: { id: true, profile: { select: { displayName: true } } } }
+          },
+          orderBy: { createdAt: "desc" }
+        }),
+        prisma.rallyFeedback.findMany({
+          where: { userId: request.user.sub },
+          orderBy: { createdAt: "desc" }
+        }),
+        prisma.block.findMany({
+          where: { blockerId: request.user.sub },
+          select: { blockedId: true, reason: true, createdAt: true },
+          orderBy: { createdAt: "desc" }
+        }),
+        prisma.report.findMany({
+          where: { reporterId: request.user.sub },
+          select: {
+            id: true,
+            reportedUserId: true,
+            rallyId: true,
+            category: true,
+            status: true,
+            details: true,
+            resolutionNote: true,
+            resolvedAt: true,
+            createdAt: true,
+            updatedAt: true
+          },
+          orderBy: { createdAt: "desc" }
+        }),
+        prisma.analyticsEvent.findMany({
+          where: { userId: request.user.sub },
+          orderBy: { createdAt: "desc" }
+        }),
+        prisma.auditLog.findMany({
+          where: { userId: request.user.sub },
+          select: { action: true, metadata: true, createdAt: true },
+          orderBy: { createdAt: "desc" }
+        })
+      ]);
+
+      const date = new Date().toISOString().slice(0, 10);
+      reply.header("cache-control", "no-store");
+      reply.header("content-disposition", `attachment; filename="rally-data-export-${date}.json"`);
+      return {
+        exportedAt: new Date(),
+        account,
+        rallies,
+        feedback,
+        blocks,
+        reports,
+        analyticsEvents,
+        auditLogs
+      };
+    }
+  );
+
   app.put("/profile", { preHandler: app.authenticate }, async (request) => {
     const body = upsertProfileSchema.parse(request.body);
 

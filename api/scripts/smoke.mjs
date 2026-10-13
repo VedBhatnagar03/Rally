@@ -12,7 +12,7 @@ async function request(path, options = {}) {
   });
 
   const body = await response.json().catch(() => null);
-  return { status: response.status, body };
+  return { status: response.status, body, headers: response.headers };
 }
 
 async function post(path, body, token) {
@@ -219,6 +219,21 @@ if (
 
 await completeProfile(normal, "Normal User", [{ dayOfWeek: 2, startTime: "17:00", endTime: "20:00" }]);
 await completeProfile(other, "Other User", [{ dayOfWeek: 2, startTime: "18:00", endTime: "21:00" }]);
+
+const dataExport = await get("/v1/me/export", normal.token);
+assertStatus("export account data", dataExport.status, 200);
+if (
+  dataExport.body.account?.email !== normal.user.email ||
+  !dataExport.headers.get("content-disposition")?.includes("rally-data-export-")
+) {
+  throw new Error("export account data: expected account identity and attachment filename");
+}
+const serializedExport = JSON.stringify(dataExport.body);
+for (const forbiddenField of ["passwordHash", "tokenHash", "refreshToken", "operationalIncident"]) {
+  if (serializedExport.includes(forbiddenField)) {
+    throw new Error(`export account data: included forbidden field ${forbiddenField}`);
+  }
+}
 
 const adminSummary = await get("/v1/admin/summary?windowDays=7", adminLogin.body.token);
 assertStatus("admin summary", adminSummary.status, 200);
@@ -551,6 +566,7 @@ console.log(JSON.stringify({
     "block enforcement",
     "block cancellation and report relationship integrity",
     "account deactivation, deletion, and unblock",
+    "privacy-safe account data export",
     "mutual filters and explainable recommendations",
     "schedule suggestions",
     "persisted rally lifecycle",
