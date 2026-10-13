@@ -3,6 +3,7 @@
 ## Current Security Baseline
 
 - UIUC-only registration at the auth boundary.
+- Versioned 18+ and policy attestation is required at registration.
 - Email verification required before login.
 - Passwords hashed with Argon2id.
 - Verification tokens are opaque and stored only as SHA-256 hashes.

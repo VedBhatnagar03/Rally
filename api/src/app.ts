@@ -13,6 +13,7 @@ import { adminRoutes } from "./routes/admin.js";
 import { analyticsRoutes } from "./routes/analytics.js";
 import { feedbackRoutes } from "./routes/feedback.js";
 import { meRoutes } from "./routes/me.js";
+import { policyRoutes } from "./routes/policies.js";
 import { rallyRoutes } from "./routes/rallies.js";
 import { recommendationRoutes } from "./routes/recommendations.js";
 import { safetyRoutes } from "./routes/safety.js";
@@ -94,6 +95,7 @@ export function buildApp() {
     return reply.code(200).send({ ok: true, dependencies: { database: "ok" } });
   });
   app.register(authRoutes, { prefix: "/v1/auth" });
+  app.register(policyRoutes, { prefix: "/v1/policies" });
   app.register(meRoutes, { prefix: "/v1/me" });
   app.register(recommendationRoutes, { prefix: "/v1/recommendations" });
   app.register(rallyRoutes, { prefix: "/v1/rallies" });

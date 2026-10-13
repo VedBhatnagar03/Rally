@@ -1,6 +1,6 @@
 # Rally Closed Beta Privacy Notice
 
-Status: founder-review draft. Add an effective date and monitored privacy contact before publishing. Obtain appropriate legal review before a broad public launch.
+Status: founder-review draft, policy version `2026-10-12-beta`. Add an effective date and monitored privacy contact before publishing. Obtain appropriate legal review before a broad public launch.
 
 ## The Short Version
 

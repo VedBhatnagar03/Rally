@@ -1,6 +1,6 @@
 # Rally Closed Beta Community Guidelines
 
-Status: founder-review draft. Publish these guidelines before inviting participants.
+Status: founder-review draft, policy version `2026-10-12-beta`. Publish these guidelines before inviting participants.
 
 ## Who Rally Is For
 
