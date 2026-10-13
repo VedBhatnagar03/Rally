@@ -21,6 +21,7 @@ Must ship:
 - Shared time suggestions from availability overlap.
 - Venue/court handoff without Active Illini automation.
 - Confirmed court handoffs cannot be overwritten by the other participant.
+- Cancelled Rallies retain confirmed reservation details until the booking owner completes the external cancellation.
 - Feedback, safety check, Rally Again, block, report.
 - Negative post-Rally safety checks are confidentially escalated to the founder moderation queue.
 - Founder console for users, Rallies, reports, and funnel counts.

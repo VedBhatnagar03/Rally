@@ -39,6 +39,18 @@ export async function safetyRoutes(app: FastifyInstance) {
     }
 
     const now = new Date();
+    const pair = {
+      OR: [
+        { senderId: request.user.sub, receiverId: body.blockedUserId },
+        { senderId: body.blockedUserId, receiverId: request.user.sub }
+      ]
+    };
+    const cancellation = {
+      status: "CANCELLED" as const,
+      cancelledAt: now,
+      cancelledById: request.user.sub,
+      cancellationReason: "Cancelled after a participant blocked the other user"
+    };
     const [block] = await prisma.$transaction([
       prisma.block.upsert({
         where: {
@@ -59,17 +71,23 @@ export async function safetyRoutes(app: FastifyInstance) {
       prisma.rally.updateMany({
         where: {
           status: { in: ["PENDING", "ACCEPTED", "SCHEDULED"] },
-          OR: [
-            { senderId: request.user.sub, receiverId: body.blockedUserId },
-            { senderId: body.blockedUserId, receiverId: request.user.sub }
-          ]
+          courtStatus: "BOOKED",
+          ...pair
+        },
+        data: cancellation
+      }),
+      prisma.rally.updateMany({
+        where: {
+          status: { in: ["PENDING", "ACCEPTED", "SCHEDULED"] },
+          courtStatus: { not: "BOOKED" },
+          ...pair
         },
         data: {
-          status: "CANCELLED",
-          cancelledAt: now,
-          cancelledById: request.user.sub,
-          cancellationReason: "Cancelled after a participant blocked the other user",
-          courtStatus: "NOT_STARTED"
+          ...cancellation,
+          courtStatus: "NOT_STARTED",
+          courtNumber: null,
+          bookingReference: null,
+          bookingOwnerId: null
         }
       })
     ]);

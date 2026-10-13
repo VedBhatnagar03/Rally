@@ -17,7 +17,10 @@ import {
   validateRallyWindow
 } from "../modules/rallies/integrity.js";
 import { rallyReadInclude, toRallyView } from "../modules/rallies/presentation.js";
-import { isSameConfirmedBooking } from "../modules/rallies/booking-integrity.js";
+import {
+  courtDataAfterCancellation,
+  isSameConfirmedBooking
+} from "../modules/rallies/booking-integrity.js";
 import { writeAuditLog } from "../utils/audit.js";
 
 const activeRallyStatuses = ["PENDING", "ACCEPTED", "SCHEDULED"] as const;
@@ -435,13 +438,17 @@ export async function rallyRoutes(app: FastifyInstance) {
 
     const transitioned = await prisma.$transaction(async (tx) => {
       const result = await tx.rally.updateMany({
-        where: { id: rally.id, status: { in: ["PENDING", "ACCEPTED", "SCHEDULED"] } },
+        where: {
+          id: rally.id,
+          status: { in: ["PENDING", "ACCEPTED", "SCHEDULED"] },
+          courtStatus: rally.courtStatus
+        },
         data: {
           status: "CANCELLED",
           cancelledAt: new Date(),
           cancelledById: request.user.sub,
           cancellationReason: body.reason,
-          courtStatus: "NOT_STARTED"
+          ...courtDataAfterCancellation(rally.courtStatus)
         }
       });
       if (result.count === 1) {

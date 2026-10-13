@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { isSameConfirmedBooking } from "../src/modules/rallies/booking-integrity.js";
+import {
+  courtDataAfterCancellation,
+  isSameConfirmedBooking
+} from "../src/modules/rallies/booking-integrity.js";
 
 const confirmed = {
   courtStatus: "BOOKED",
@@ -26,5 +29,20 @@ describe("court booking integrity", () => {
     ["unavailable reset", "user-a", { courtStatus: "UNAVAILABLE" as const }]
   ])("rejects a confirmed booking change by %s", (_label, userId, submission) => {
     expect(isSameConfirmedBooking(confirmed, userId, submission)).toBe(false);
+  });
+});
+
+describe("booking cancellation handoff", () => {
+  it("preserves confirmed external booking details", () => {
+    expect(courtDataAfterCancellation("BOOKED")).toEqual({});
+  });
+
+  it("clears an unconfirmed booking handoff", () => {
+    expect(courtDataAfterCancellation("UNAVAILABLE")).toEqual({
+      courtStatus: "NOT_STARTED",
+      courtNumber: null,
+      bookingReference: null,
+      bookingOwnerId: null
+    });
   });
 });
