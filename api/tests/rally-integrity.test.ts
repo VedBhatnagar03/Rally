@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { rallyWindowErrorMessage, validateRallyWindow } from "../src/modules/rallies/integrity.js";
+import {
+  canCompleteRally,
+  rallyWindowErrorMessage,
+  validateRallyWindow
+} from "../src/modules/rallies/integrity.js";
 
 const now = new Date("2026-10-10T12:00:00.000Z");
 
@@ -22,5 +26,16 @@ describe("Rally window integrity", () => {
     const result = validateRallyWindow(new Date(start), new Date(end), now);
     expect(result).toBe(expected);
     expect(rallyWindowErrorMessage(result!)).toBeTruthy();
+  });
+});
+
+describe("Rally completion timing", () => {
+  it("rejects completion before the scheduled start", () => {
+    expect(canCompleteRally(new Date("2026-10-10T13:00:00.000Z"), now)).toBe(false);
+  });
+
+  it("allows completion at or after the scheduled start", () => {
+    expect(canCompleteRally(now, now)).toBe(true);
+    expect(canCompleteRally(new Date("2026-10-10T11:00:00.000Z"), now)).toBe(true);
   });
 });

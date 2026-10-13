@@ -12,6 +12,10 @@ export function validateRallyWindow(start: Date, end: Date, now = new Date()): R
   return null;
 }
 
+export function canCompleteRally(scheduledStart: Date, now = new Date()): boolean {
+  return now >= scheduledStart;
+}
+
 export function rallyWindowErrorMessage(error: Exclude<RallyWindowError, null>) {
   switch (error) {
     case "PAST_START":

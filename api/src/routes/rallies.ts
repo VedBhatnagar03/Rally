@@ -11,7 +11,11 @@ import {
 } from "../modules/rallies/schemas.js";
 import { suggestRallySlots } from "../modules/scheduling/scheduler.js";
 import { passesHardFilters } from "../modules/matching/matcher.js";
-import { rallyWindowErrorMessage, validateRallyWindow } from "../modules/rallies/integrity.js";
+import {
+  canCompleteRally,
+  rallyWindowErrorMessage,
+  validateRallyWindow
+} from "../modules/rallies/integrity.js";
 import { rallyReadInclude, toRallyView } from "../modules/rallies/presentation.js";
 import { writeAuditLog } from "../utils/audit.js";
 
@@ -348,6 +352,10 @@ export async function rallyRoutes(app: FastifyInstance) {
 
     if (rally.status !== "SCHEDULED" && rally.status !== "COMPLETED") {
       return reply.code(409).send({ error: "Only scheduled Rallies can be completed" });
+    }
+
+    if (rally.status === "SCHEDULED" && !canCompleteRally(rally.proposedStartAt)) {
+      return reply.code(409).send({ error: "Rally cannot be completed before its scheduled start" });
     }
 
     if (rally.status === "SCHEDULED") {
