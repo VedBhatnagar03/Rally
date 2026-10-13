@@ -25,6 +25,18 @@ export async function recommendationRoutes(app: FastifyInstance) {
         },
         blocksCreated: {
           none: { blockedId: currentUser.id }
+        },
+        sentRallies: {
+          none: {
+            receiverId: currentUser.id,
+            status: { in: ["PENDING", "ACCEPTED", "SCHEDULED"] }
+          }
+        },
+        receivedRallies: {
+          none: {
+            senderId: currentUser.id,
+            status: { in: ["PENDING", "ACCEPTED", "SCHEDULED"] }
+          }
         }
       },
       include: {

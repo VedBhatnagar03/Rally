@@ -608,6 +608,16 @@ const rally = await post(
 );
 assertStatus("create persisted rally", rally.status, 201);
 
+const activePairRecommendations = await get("/v1/recommendations", schedulerA.token);
+assertStatus("list recommendations during active Rally", activePairRecommendations.status, 200);
+if (
+  activePairRecommendations.body.recommendations.some(
+    (recommendation) => recommendation.userId === schedulerB.user.id
+  )
+) {
+  throw new Error("active Rally discovery: expected the active pair to be excluded");
+}
+
 const receivedNotifications = await get("/v1/notifications?unreadOnly=true", schedulerB.token);
 assertStatus("list unread notifications", receivedNotifications.status, 200);
 const received = receivedNotifications.body.notifications.filter(
@@ -769,6 +779,16 @@ for (const completion of completionAttempts) {
 }
 if (completionAttempts[0].body.rally.completedAt !== completionAttempts[1].body.rally.completedAt) {
   throw new Error("idempotent concurrent completion: expected one persisted completion timestamp");
+}
+
+const completedPairRecommendations = await get("/v1/recommendations", schedulerA.token);
+assertStatus("list recommendations after completed Rally", completedPairRecommendations.status, 200);
+if (
+  !completedPairRecommendations.body.recommendations.some(
+    (recommendation) => recommendation.userId === schedulerB.user.id
+  )
+) {
+  throw new Error("completed Rally discovery: expected the terminal pair to be eligible again");
 }
 
 const [completedNotificationsA, completedNotificationsB] = await Promise.all([
@@ -994,6 +1014,7 @@ console.log(JSON.stringify({
     "privacy-safe account data export",
     "sanitized profile photo upload and ownership",
     "mutual filters and explainable recommendations",
+    "actionable discovery excludes active Rally pairs",
     "profile prompts, interests, and discovery details",
     "schedule suggestions",
     "persisted rally lifecycle",
