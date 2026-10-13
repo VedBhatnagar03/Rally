@@ -335,6 +335,7 @@ model RallyFeedback {
 
   rally Rally @relation(fields: [rallyId], references: [id], onDelete: Cascade)
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  safetyReport Report? @relation("FeedbackSafetyReport")
 
   @@unique([rallyId, userId])
   @@index([userId, createdAt])
@@ -359,6 +360,7 @@ model Report {
   reporterId     String
   reportedUserId String
   rallyId        String?
+  sourceFeedbackId String?      @unique
   category       ReportCategory
   status         ReportStatus   @default(OPEN)
   details        String
@@ -371,6 +373,7 @@ model Report {
   reporter     User   @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
   reportedUser User   @relation("Reported", fields: [reportedUserId], references: [id], onDelete: Cascade)
   rally        Rally? @relation(fields: [rallyId], references: [id], onDelete: SetNull)
+  sourceFeedback RallyFeedback? @relation("FeedbackSafetyReport", fields: [sourceFeedbackId], references: [id], onDelete: SetNull)
 
   @@index([status, createdAt])
   @@index([reportedUserId, createdAt])

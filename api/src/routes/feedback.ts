@@ -56,6 +56,26 @@ export async function feedbackRoutes(app: FastifyInstance) {
         },
         update: body
       });
+      if (!body.feltSafe) {
+        const reportedUserId =
+          request.user.sub === rally.senderId ? rally.receiverId : rally.senderId;
+        const details = body.notes
+          ? `Post-Rally safety check was negative. Participant note: ${body.notes}`
+          : "Post-Rally safety check was negative. Follow up confidentially with the reporting participant.";
+
+        await tx.report.upsert({
+          where: { sourceFeedbackId: saved.id },
+          create: {
+            reporterId: request.user.sub,
+            reportedUserId,
+            rallyId: rally.id,
+            sourceFeedbackId: saved.id,
+            category: "UNSAFE_BEHAVIOR",
+            details
+          },
+          update: { details }
+        });
+      }
       const responses = await tx.rallyFeedback.findMany({ where: { rallyId: rally.id } });
       if (responses.length >= 2 && responses.every((response) => response.rallyAgain)) {
         await tx.notification.createMany({
@@ -77,6 +97,6 @@ export async function feedbackRoutes(app: FastifyInstance) {
       request
     });
 
-    return { feedback };
+    return { feedback, safetyFollowUpCreated: !body.feltSafe };
   });
 }

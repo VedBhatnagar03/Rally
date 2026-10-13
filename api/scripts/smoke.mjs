@@ -728,10 +728,32 @@ for (const notifications of [completedNotificationsA, completedNotificationsB]) 
 
 const feedbackA = await post(
   `/v1/feedback/rallies/${rally.body.rally.id}`,
-  { played: true, feltSafe: true, rallyAgain: true, experienceScore: 5 },
+  {
+    played: true,
+    feltSafe: false,
+    rallyAgain: true,
+    experienceScore: 3,
+    notes: "Please follow up privately about the venue interaction."
+  },
   schedulerA.token
 );
 assertStatus("submit first feedback", feedbackA.status, 200);
+if (!feedbackA.body.safetyFollowUpCreated || "report" in feedbackA.body) {
+  throw new Error("unsafe feedback: expected a confidential follow-up acknowledgement only");
+}
+
+const repeatedUnsafeFeedback = await post(
+  `/v1/feedback/rallies/${rally.body.rally.id}`,
+  {
+    played: true,
+    feltSafe: false,
+    rallyAgain: true,
+    experienceScore: 3,
+    notes: "Please follow up privately about the venue interaction."
+  },
+  schedulerA.token
+);
+assertStatus("retry unsafe feedback", repeatedUnsafeFeedback.status, 200);
 
 const feedbackB = await post(
   `/v1/feedback/rallies/${rally.body.rally.id}`,
@@ -745,6 +767,22 @@ assertStatus("read rally outcome", outcome.status, 200);
 
 if (!outcome.body.outcome.bothResponded || !outcome.body.outcome.isMutualMatch) {
   throw new Error("read rally outcome: expected mutual match after two yes feedback entries");
+}
+
+const safetyReports = await get("/v1/admin/reports?limit=100", adminLogin.body.token);
+assertStatus("surface unsafe feedback in founder queue", safetyReports.status, 200);
+const generatedSafetyReports = safetyReports.body.reports.filter(
+  (entry) =>
+    entry.rallyId === rally.body.rally.id &&
+    entry.reporterId === schedulerA.user.id &&
+    entry.sourceFeedbackId === feedbackA.body.feedback.id
+);
+if (
+  generatedSafetyReports.length !== 1 ||
+  generatedSafetyReports[0].reportedUserId !== schedulerB.user.id ||
+  generatedSafetyReports[0].category !== "UNSAFE_BEHAVIOR"
+) {
+  throw new Error("unsafe feedback: expected one deduplicated founder safety report");
 }
 
 const [mutualNotificationsA, mutualNotificationsB] = await Promise.all([
@@ -852,6 +890,7 @@ console.log(JSON.stringify({
     "explicit scheduling and cancellation states",
     "atomic concurrent Rally transitions",
     "persisted feedback outcome",
+    "confidential deduplicated safety-check escalation",
     "durable lifecycle notifications"
   ]
 }, null, 2));
