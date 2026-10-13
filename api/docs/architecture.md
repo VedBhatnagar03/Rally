@@ -21,6 +21,7 @@ Rally does not scrape or automate Active Illini. The backend suggests the best s
 - Account safety: password-confirmed deactivation/deletion, session revocation and user-controlled unblock.
 - Rally integrity: one active Rally per user pair, bounded future scheduling windows and immediate cancellation after a block.
 - Rally transitions: expected prior states are enforced in atomic database writes so concurrent actions cannot overwrite one another.
+- Rally reads: list and detail endpoints use an explicit participant allowlist so email, dating filters, availability and trust data never leak through nested records.
 - Notifications: durable in-app lifecycle events are created in the same transaction as Rally state changes and deduplicated per recipient, event type and Rally.
 - Profile photos: clients upload to a short-lived private S3-compatible target; the API validates and re-encodes images before publishing owner-bound assets.
 

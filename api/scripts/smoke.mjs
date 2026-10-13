@@ -445,6 +445,32 @@ const blockedPairRally = normalRallies.body.rallies.find(
 if (!blockedPairRally || blockedPairRally.status !== "CANCELLED") {
   throw new Error("block user: expected the active Rally to be cancelled");
 }
+const rallyReadPayload = JSON.stringify(blockedPairRally);
+for (const privateField of [
+  "email",
+  "passwordHash",
+  "interestedIn",
+  "preferredAgeMin",
+  "preferredAgeMax",
+  "trustScore",
+  "availability",
+  "storageKey"
+]) {
+  if (rallyReadPayload.includes(`"${privateField}"`)) {
+    throw new Error(`secure Rally read: leaked private field ${privateField}`);
+  }
+}
+if (
+  blockedPairRally.sender?.displayName !== "Normal User" ||
+  blockedPairRally.receiver?.displayName !== "Other User"
+) {
+  throw new Error("secure Rally read: expected public participant summaries");
+}
+
+const rallyDetail = await get(`/v1/rallies/${blockedPairRally.id}`, normal.token);
+assertStatus("read Rally detail as participant", rallyDetail.status, 200);
+const hiddenRallyDetail = await get(`/v1/rallies/${blockedPairRally.id}`, schedulerA.token);
+assertStatus("hide Rally detail from nonparticipant", hiddenRallyDetail.status, 404);
 
 const report = await post(
   "/v1/safety/reports",
@@ -814,6 +840,7 @@ console.log(JSON.stringify({
     "founder report resolution and user suspension",
     "block enforcement",
     "block cancellation and report relationship integrity",
+    "privacy-safe participant-authorized Rally reads",
     "account deactivation, deletion, and unblock",
     "privacy-safe account data export",
     "sanitized profile photo upload and ownership",
