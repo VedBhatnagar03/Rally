@@ -18,6 +18,13 @@ const envSchema = z.object({
   POLICY_VERSION: z.string().trim().min(1).max(80).default("2026-10-12-beta"),
   RESEND_API_KEY: optionalSecret,
   EMAIL_FROM: z.string().min(3).default("Rally <onboarding@resend.dev>"),
+  PHOTO_STORAGE_BUCKET: z.string().trim().min(1).default("rally-photos"),
+  PHOTO_STORAGE_UPLOAD_BUCKET: z.string().trim().min(1).default("rally-photo-uploads"),
+  PHOTO_STORAGE_REGION: z.string().trim().min(1).default("us-east-1"),
+  PHOTO_STORAGE_ENDPOINT: z.string().url().optional(),
+  PHOTO_STORAGE_PUBLIC_BASE_URL: z.string().url().optional(),
+  PHOTO_STORAGE_ACCESS_KEY: optionalSecret,
+  PHOTO_STORAGE_SECRET_KEY: optionalSecret,
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
   ADMIN_EMAILS: z.string().default(""),
@@ -32,6 +39,31 @@ const envSchema = z.object({
       message: "RESEND_API_KEY is required in production",
       path: ["RESEND_API_KEY"]
     });
+  }
+  if (value.NODE_ENV === "production") {
+    for (const key of [
+      "PHOTO_STORAGE_ENDPOINT",
+      "PHOTO_STORAGE_PUBLIC_BASE_URL",
+      "PHOTO_STORAGE_ACCESS_KEY",
+      "PHOTO_STORAGE_SECRET_KEY"
+    ] as const) {
+      if (!value[key]) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `${key} is required in production`,
+          path: [key]
+        });
+      }
+    }
+    for (const key of ["PHOTO_STORAGE_ENDPOINT", "PHOTO_STORAGE_PUBLIC_BASE_URL"] as const) {
+      if (value[key] && new URL(value[key]).protocol !== "https:") {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `${key} must use HTTPS in production`,
+          path: [key]
+        });
+      }
+    }
   }
 });
 

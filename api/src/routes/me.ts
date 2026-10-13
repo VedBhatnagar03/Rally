@@ -7,6 +7,7 @@ import { createOpaqueToken } from "../utils/tokens.js";
 import { writeAuditLog } from "../utils/audit.js";
 import { policyConsentSchema } from "../modules/policies/schemas.js";
 import { env } from "../config/env.js";
+import { deletePhotoObject, deletePhotoUploadObject } from "../modules/profile/photo-storage.js";
 
 export async function meRoutes(app: FastifyInstance) {
   app.get("/", { preHandler: app.authenticate }, async (request) => {
@@ -22,7 +23,8 @@ export async function meRoutes(app: FastifyInstance) {
         policyVersion: true,
         profile: true,
         sportProfiles: true,
-        availability: true
+        availability: true,
+        photos: { orderBy: { sortOrder: "asc" } }
       }
     });
   });
@@ -262,11 +264,29 @@ export async function meRoutes(app: FastifyInstance) {
 
     const deletedAt = new Date();
     const unusablePasswordHash = await hashPassword(createOpaqueToken());
+    const storedObjects = await prisma.photo.findMany({
+      where: { userId: user.id, storageKey: { not: null } },
+      select: { storageKey: true }
+    });
+    const uploadObjects = await prisma.photoUpload.findMany({
+      where: { userId: user.id },
+      select: { objectKey: true }
+    });
+    try {
+      await Promise.all([
+        ...storedObjects.flatMap(({ storageKey }) => storageKey ? [deletePhotoObject(storageKey)] : []),
+        ...uploadObjects.map(({ objectKey }) => deletePhotoUploadObject(objectKey))
+      ]);
+    } catch (error) {
+      request.log.error({ err: error }, "Could not clean up account photo storage");
+      return reply.code(503).send({ error: "Account deletion is temporarily unavailable" });
+    }
     await prisma.$transaction([
       prisma.profile.deleteMany({ where: { userId: user.id } }),
       prisma.sportProfile.deleteMany({ where: { userId: user.id } }),
       prisma.availabilityWindow.deleteMany({ where: { userId: user.id } }),
       prisma.photo.deleteMany({ where: { userId: user.id } }),
+      prisma.photoUpload.deleteMany({ where: { userId: user.id } }),
       prisma.emailVerificationToken.deleteMany({ where: { userId: user.id } }),
       prisma.passwordResetToken.deleteMany({ where: { userId: user.id } }),
       prisma.refreshToken.deleteMany({ where: { userId: user.id } }),

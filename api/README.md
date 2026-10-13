@@ -29,7 +29,8 @@ Rally's core loop:
 ```bash
 npm install
 cp .env.example .env
-docker compose up -d postgres redis
+docker compose up -d
+npm run storage:init
 npm run prisma:generate
 npm run prisma:migrate
 npm run dev
@@ -78,6 +79,10 @@ Current foundation:
 - `POST /v1/me/policy-consent`
 - `GET /v1/me/export`
 - `PUT /v1/me/profile`
+- `POST /v1/me/photos/upload-intents`
+- `POST /v1/me/photos/upload-intents/:uploadId/complete`
+- `PATCH /v1/me/photos/order`
+- `DELETE /v1/me/photos/:photoId`
 - `GET /v1/recommendations`
 - `GET /v1/rallies/suggestions/:receiverId`
 - `POST /v1/rallies`
@@ -109,7 +114,8 @@ The shared Next.js app can run its backend harness against this service by setti
 ## Verified Local Flow
 
 ```bash
-docker compose up -d postgres redis
+docker compose up -d
+npm run storage:init
 cp .env.example .env
 npm run prisma:generate
 npm run prisma:migrate
@@ -118,3 +124,5 @@ npm run dev
 ```
 
 In development, `POST /v1/auth/register` returns a `devVerificationToken` so the team can test email verification without an email provider. Production responses never include that token.
+
+Profile photos use private presigned uploads. The API decodes, rotates, bounds, strips metadata from, and converts each image to WebP before publishing it. The local Compose stack provides S3-compatible storage through VersityGW; run `npm run storage:init` after first startup. Production may use any S3-compatible provider with the photo-storage environment variables.
