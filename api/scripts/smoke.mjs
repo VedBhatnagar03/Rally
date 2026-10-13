@@ -1,9 +1,11 @@
 /* global FormData */
 import { Blob, Buffer } from "node:buffer";
+import { PrismaClient } from "@prisma/client";
 
 const baseUrl = process.env.RALLY_API_BASE_URL ?? "http://localhost:4000";
 const adminEmail = process.env.RALLY_SMOKE_ADMIN_EMAIL ?? "naman.test@illinois.edu";
 const password = process.env.RALLY_SMOKE_PASSWORD ?? "correct-horse-battery-staple";
+const smokePrisma = new PrismaClient();
 let currentPolicyVersion;
 
 async function request(path, options = {}) {
@@ -701,6 +703,21 @@ const booked = await post(
 );
 assertStatus("persist court booking", booked.status, 200);
 
+const earlyCompletion = await post(
+  `/v1/rallies/${rally.body.rally.id}/complete`,
+  {},
+  schedulerA.token
+);
+assertStatus("reject completion before scheduled start", earlyCompletion.status, 409);
+
+await smokePrisma.rally.update({
+  where: { id: rally.body.rally.id },
+  data: {
+    proposedStartAt: new Date(Date.now() - 3_600_000),
+    proposedEndAt: new Date(Date.now() - 1_800_000)
+  }
+});
+
 const completionAttempts = await Promise.all([
   post(`/v1/rallies/${rally.body.rally.id}/complete`, {}, schedulerA.token),
   post(`/v1/rallies/${rally.body.rally.id}/complete`, {}, schedulerB.token)
@@ -885,6 +902,8 @@ const acceptCancelled = await post(
 );
 assertStatus("reject cancelled rally transition", acceptCancelled.status, 409);
 
+await smokePrisma.$disconnect();
+
 console.log(JSON.stringify({
   ok: true,
   checks: [
@@ -913,6 +932,7 @@ console.log(JSON.stringify({
     "persisted rally lifecycle",
     "duplicate and invalid Rally rejection",
     "explicit scheduling and cancellation states",
+    "scheduled-start completion boundary",
     "atomic concurrent Rally transitions",
     "persisted feedback outcome",
     "immutable idempotent feedback decisions",

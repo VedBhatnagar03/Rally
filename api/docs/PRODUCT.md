@@ -17,6 +17,7 @@ Must ship:
 - Profile with name, photos, class year, major, gender, dating preferences, intent, bio, prompts, interests, sports, skill, intensity, availability.
 - Curated discovery with readable reasons.
 - Send Rally, accept, decline, cancel, scheduled/upcoming state.
+- Completion and post-Rally feedback unlock only once the scheduled Rally has started.
 - Shared time suggestions from availability overlap.
 - Venue/court handoff without Active Illini automation.
 - Feedback, safety check, Rally Again, block, report.
