@@ -755,12 +755,37 @@ const repeatedUnsafeFeedback = await post(
 );
 assertStatus("retry unsafe feedback", repeatedUnsafeFeedback.status, 200);
 
-const feedbackB = await post(
+const changedFeedback = await post(
   `/v1/feedback/rallies/${rally.body.rally.id}`,
-  { played: true, feltSafe: true, rallyAgain: true, experienceScore: 5 },
-  schedulerB.token
+  {
+    played: true,
+    feltSafe: true,
+    rallyAgain: false,
+    experienceScore: 5,
+    notes: "Attempt to revise a final response."
+  },
+  schedulerA.token
 );
-assertStatus("submit second feedback", feedbackB.status, 200);
+assertStatus("reject changed final feedback", changedFeedback.status, 409);
+
+const feedbackBAttempts = await Promise.all([
+  post(
+    `/v1/feedback/rallies/${rally.body.rally.id}`,
+    { played: true, feltSafe: true, rallyAgain: true, experienceScore: 5 },
+    schedulerB.token
+  ),
+  post(
+    `/v1/feedback/rallies/${rally.body.rally.id}`,
+    { played: true, feltSafe: true, rallyAgain: true, experienceScore: 5 },
+    schedulerB.token
+  )
+]);
+for (const attempt of feedbackBAttempts) {
+  assertStatus("submit concurrent identical feedback", attempt.status, 200);
+}
+if (feedbackBAttempts[0].body.feedback.id !== feedbackBAttempts[1].body.feedback.id) {
+  throw new Error("concurrent identical feedback: expected one persisted response");
+}
 
 const outcome = await get(`/v1/feedback/rallies/${rally.body.rally.id}/outcome`, schedulerA.token);
 assertStatus("read rally outcome", outcome.status, 200);
@@ -890,6 +915,7 @@ console.log(JSON.stringify({
     "explicit scheduling and cancellation states",
     "atomic concurrent Rally transitions",
     "persisted feedback outcome",
+    "immutable idempotent feedback decisions",
     "confidential deduplicated safety-check escalation",
     "durable lifecycle notifications"
   ]

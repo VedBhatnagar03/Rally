@@ -1,5 +1,7 @@
+import { Prisma } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/prisma.js";
+import { isSameFeedback } from "../modules/feedback/integrity.js";
 import { rallyFeedbackSchema } from "../modules/feedback/schemas.js";
 import { writeAuditLog } from "../utils/audit.js";
 
@@ -41,54 +43,71 @@ export async function feedbackRoutes(app: FastifyInstance) {
       return reply.code(409).send({ error: "Feedback can only be submitted after a completed Rally" });
     }
 
-    const feedback = await prisma.$transaction(async (tx) => {
-      const saved = await tx.rallyFeedback.upsert({
-        where: {
-          rallyId_userId: {
-            rallyId: rally.id,
-            userId: request.user.sub
-          }
-        },
-        create: {
-          rallyId: rally.id,
-          userId: request.user.sub,
-          ...body
-        },
-        update: body
-      });
-      if (!body.feltSafe) {
-        const reportedUserId =
-          request.user.sub === rally.senderId ? rally.receiverId : rally.senderId;
-        const details = body.notes
-          ? `Post-Rally safety check was negative. Participant note: ${body.notes}`
-          : "Post-Rally safety check was negative. Follow up confidentially with the reporting participant.";
+    const feedbackKey = {
+      rallyId_userId: { rallyId: rally.id, userId: request.user.sub }
+    };
+    const existing = await prisma.rallyFeedback.findUnique({ where: feedbackKey });
+    if (existing) {
+      if (!isSameFeedback(existing, body)) {
+        return reply.code(409).send({ error: "Rally feedback is final once submitted" });
+      }
+      return { feedback: existing, safetyFollowUpCreated: !existing.feltSafe };
+    }
 
-        await tx.report.upsert({
-          where: { sourceFeedbackId: saved.id },
-          create: {
-            reporterId: request.user.sub,
-            reportedUserId,
+    let feedback;
+    try {
+      feedback = await prisma.$transaction(async (tx) => {
+        const saved = await tx.rallyFeedback.create({
+          data: {
             rallyId: rally.id,
-            sourceFeedbackId: saved.id,
-            category: "UNSAFE_BEHAVIOR",
-            details
-          },
-          update: { details }
+            userId: request.user.sub,
+            ...body
+          }
         });
+        if (!body.feltSafe) {
+          const reportedUserId =
+            request.user.sub === rally.senderId ? rally.receiverId : rally.senderId;
+          const details = body.notes
+            ? `Post-Rally safety check was negative. Participant note: ${body.notes}`
+            : "Post-Rally safety check was negative. Follow up confidentially with the reporting participant.";
+
+          await tx.report.upsert({
+            where: { sourceFeedbackId: saved.id },
+            create: {
+              reporterId: request.user.sub,
+              reportedUserId,
+              rallyId: rally.id,
+              sourceFeedbackId: saved.id,
+              category: "UNSAFE_BEHAVIOR",
+              details
+            },
+            update: { details }
+          });
+        }
+        const responses = await tx.rallyFeedback.findMany({ where: { rallyId: rally.id } });
+        if (responses.length >= 2 && responses.every((response) => response.rallyAgain)) {
+          await tx.notification.createMany({
+            data: [rally.senderId, rally.receiverId].map((userId) => ({
+              userId,
+              type: "MUTUAL_RALLY_AGAIN" as const,
+              rallyId: rally.id
+            })),
+            skipDuplicates: true
+          });
+        }
+        return saved;
+      });
+    } catch (error) {
+      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+        throw error;
       }
-      const responses = await tx.rallyFeedback.findMany({ where: { rallyId: rally.id } });
-      if (responses.length >= 2 && responses.every((response) => response.rallyAgain)) {
-        await tx.notification.createMany({
-          data: [rally.senderId, rally.receiverId].map((userId) => ({
-            userId,
-            type: "MUTUAL_RALLY_AGAIN" as const,
-            rallyId: rally.id
-          })),
-          skipDuplicates: true
-        });
+
+      const concurrent = await prisma.rallyFeedback.findUnique({ where: feedbackKey });
+      if (!concurrent || !isSameFeedback(concurrent, body)) {
+        return reply.code(409).send({ error: "Rally feedback is final once submitted" });
       }
-      return saved;
-    });
+      feedback = concurrent;
+    }
 
     await writeAuditLog({
       userId: request.user.sub,
