@@ -44,6 +44,7 @@ GitHub Actions runs both paths for every backend pull request. It applies all mi
 - `JWT_SECRET`: independently generated secret of at least 32 characters.
 - `CORS_ORIGIN`: exact HTTPS frontend origin; use a comma-separated allowlist only when required.
 - `PUBLIC_APP_URL`: exact HTTPS frontend origin used in email links.
+- `PHOTO_STORAGE_*`: S3-compatible private staging and public profile-photo buckets, credentials, endpoint and public asset base URL. Keep the staging bucket private and allow reads only from the published bucket.
 - `RESEND_API_KEY` and a verified `EMAIL_FROM` sender.
 - `ADMIN_EMAILS`: smallest possible founder/admin allowlist.
 - `DEV_TOOLS_ENABLED=false`.
@@ -56,11 +57,12 @@ Store secrets in the hosting provider's secret manager. Never place production v
 2. Confirm a recent automated database backup exists and record its timestamp.
 3. Review new files under `prisma/migrations`; migrations are forward-only and must be safe for existing data.
 4. Build the immutable Docker image and review the hosting provider's image scan.
-5. Run `npm run prisma:deploy` once as a release task, before starting new application replicas.
-6. Start the image as its built-in non-root `node` user. Do not run migrations independently in every replica.
-7. Wait for `/ready` to return `200`, then shift traffic.
-8. Verify registration, login, founder summary, and incident feed without using development routes.
-9. Watch 5xx logs and `/v1/admin/incidents` during the initial rollout.
+5. Provision the private upload bucket and public published-photo bucket once from a trusted operator environment. `npm run storage:init` creates the required buckets and read-only public policy when the deployment identity is authorized to do so.
+6. Run `npm run prisma:deploy` once as a release task, before starting new application replicas.
+7. Start the image as its built-in non-root `node` user. Do not run migrations independently in every replica.
+8. Wait for `/ready` to return `200`, then shift traffic.
+9. Verify registration, login, photo upload/deletion, founder summary, and incident feed without using development routes.
+10. Watch 5xx logs and `/v1/admin/incidents` during the initial rollout.
 
 ## Backup And Restore
 

@@ -4,5 +4,5 @@
     "rootDir": ".",
     "noEmit": true
   },
-  "include": ["src", "tests", "prisma", "vitest.config.ts", "eslint.config.js"]
+  "include": ["src", "tests", "prisma", "scripts/**/*.ts", "vitest.config.ts", "eslint.config.js"]
 }

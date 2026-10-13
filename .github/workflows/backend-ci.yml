@@ -37,6 +37,13 @@ jobs:
       ADMIN_EMAILS: naman.test@illinois.edu
       RALLY_SEED_ADMIN_PASSWORD: correct-horse-battery-staple
       DEV_TOOLS_ENABLED: "true"
+      PHOTO_STORAGE_BUCKET: rally-photos
+      PHOTO_STORAGE_UPLOAD_BUCKET: rally-photo-uploads
+      PHOTO_STORAGE_REGION: us-east-1
+      PHOTO_STORAGE_ENDPOINT: http://localhost:7070
+      PHOTO_STORAGE_PUBLIC_BASE_URL: http://localhost:7070/rally-photos
+      PHOTO_STORAGE_ACCESS_KEY: rally-local
+      PHOTO_STORAGE_SECRET_KEY: rally-local-secret
     defaults:
       run:
         working-directory: api
@@ -73,6 +80,23 @@ jobs:
       - name: Apply database migrations
         run: npm run prisma:deploy
 
+      - name: Start local S3 service
+        run: |
+          docker run --detach --name rally-s3 --publish 7070:7070 \
+            versity/versitygw:v1.8.0 \
+            --access rally-local --secret rally-local-secret --port :7070 posix /tmp
+          for attempt in {1..30}; do
+            if curl --silent --output /dev/null http://127.0.0.1:7070/; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs rally-s3
+          exit 1
+
+      - name: Initialize photo storage
+        run: npm run storage:init
+
       - name: Seed smoke-test data
         run: npm run seed
 
@@ -94,7 +118,9 @@ jobs:
 
       - name: Show API log on failure
         if: failure()
-        run: cat /tmp/rally-api.log || true
+        run: |
+          cat /tmp/rally-api.log || true
+          docker logs rally-s3 || true
 
       - name: Build Docker image
         run: docker build .

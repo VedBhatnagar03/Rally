@@ -7,7 +7,8 @@
 - `PasswordResetToken`: hash-only, single-use account recovery tokens with a one-hour expiry.
 - `RefreshToken`: hash-only, rotating session tokens with expiry and revocation.
 - `Profile`: dating and campus profile.
-- `Photo`: user photo metadata.
+- `Photo`: ordered, sanitized profile-photo metadata and its published storage key.
+- `PhotoUpload`: short-lived, owner-bound private upload intent used before image validation and publication.
 - `SportProfile`: per-sport skill, intensity, and favorite flags.
 - `AvailabilityWindow`: recurring weekly availability.
 - `Venue`: UIUC-compatible court locations and handoff links.
@@ -31,3 +32,4 @@
 - Operational incidents never store request bodies, authorization headers or stack traces.
 - User exports include only the requester's account data and shared Rally records; secrets and reports submitted by other users are excluded.
 - Notifications are visible only to their recipient and are removed when that account is deleted.
+- Original photo uploads stay private; published images are decoded, resized, metadata-stripped and converted to WebP.

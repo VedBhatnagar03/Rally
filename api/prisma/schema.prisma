@@ -119,6 +119,7 @@ model User {
   refreshTokens           RefreshToken[]
   auditLogs               AuditLog[]
   photos                  Photo[]
+  photoUploads            PhotoUpload[]
   blocksCreated           Block[]                  @relation("Blocker")
   blocksReceived          Block[]                  @relation("Blocked")
   reportsCreated          Report[]                 @relation("Reporter")
@@ -234,12 +235,30 @@ model Photo {
   id        String   @id @default(cuid())
   userId    String
   url       String
+  storageKey String? @unique
+  contentType String?
+  sizeBytes Int?
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, sortOrder])
+}
+
+model PhotoUpload {
+  id          String    @id @default(cuid())
+  userId      String
+  objectKey   String    @unique
+  contentType String
+  sizeBytes   Int
+  expiresAt   DateTime
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
 }
 
 model Venue {

@@ -32,3 +32,18 @@ export const upsertProfileSchema = z.object({
   message: "preferredAgeMin must be less than or equal to preferredAgeMax",
   path: ["preferredAgeMax"]
 });
+
+export const photoUploadIntentSchema = z.object({
+  contentType: z.enum(["image/jpeg", "image/png", "image/webp"]),
+  sizeBytes: z.number().int().min(1).max(10 * 1024 * 1024)
+});
+
+export const photoUploadParamsSchema = z.object({ uploadId: z.string().cuid() });
+export const photoParamsSchema = z.object({ photoId: z.string().cuid() });
+
+export const photoOrderSchema = z.object({
+  photoIds: z.array(z.string().cuid()).min(1).max(6)
+}).refine(({ photoIds }) => new Set(photoIds).size === photoIds.length, {
+  message: "photoIds must be unique",
+  path: ["photoIds"]
+});

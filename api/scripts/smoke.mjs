@@ -1,3 +1,6 @@
+/* global FormData */
+import { Blob, Buffer } from "node:buffer";
+
 const baseUrl = process.env.RALLY_API_BASE_URL ?? "http://localhost:4000";
 const adminEmail = process.env.RALLY_SMOKE_ADMIN_EMAIL ?? "naman.test@illinois.edu";
 const password = process.env.RALLY_SMOKE_PASSWORD ?? "correct-horse-battery-staple";
@@ -116,6 +119,49 @@ async function completeProfile(userSession, displayName, availability) {
   });
 
   assertStatus(`${displayName} profile`, response.status, 200);
+}
+
+async function uploadProfilePhoto(userSession, concurrently = false) {
+  const bytes = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+    "base64"
+  );
+  const intent = await post(
+    "/v1/me/photos/upload-intents",
+    { contentType: "image/png", sizeBytes: bytes.length },
+    userSession.token
+  );
+  assertStatus("create photo upload intent", intent.status, 201);
+
+  const form = new FormData();
+  for (const [name, value] of Object.entries(intent.body.upload.fields)) form.append(name, value);
+  form.append("file", new Blob([bytes], { type: "image/png" }), "profile.png");
+  const upload = await fetch(intent.body.upload.url, { method: "POST", body: form });
+  assertStatus("upload private profile photo", upload.status, 204);
+
+  const completionPath = `/v1/me/photos/upload-intents/${intent.body.upload.id}/complete`;
+  const attempts = concurrently
+    ? await Promise.all([
+        post(completionPath, {}, userSession.token),
+        post(completionPath, {}, userSession.token)
+      ])
+    : [await post(completionPath, {}, userSession.token)];
+  if (concurrently) {
+    const statuses = attempts.map(({ status }) => status).sort();
+    if (statuses[0] !== 200 || statuses[1] !== 201) {
+      throw new Error(`concurrent photo finalization: expected 200 and 201, got ${statuses.join(", ")}`);
+    }
+  } else {
+    assertStatus("finalize sanitized profile photo", attempts[0].status, 201);
+  }
+  const completed = attempts.find(({ status }) => status === 201) ?? attempts[0];
+  if (
+    completed.body.photo.contentType !== "image/webp" ||
+    !completed.body.photo.url.endsWith(".webp")
+  ) {
+    throw new Error("finalize sanitized profile photo: expected a converted WebP asset");
+  }
+  return completed.body.photo;
 }
 
 const health = await get("/health");
@@ -258,6 +304,38 @@ if (
 
 await completeProfile(normal, "Normal User", [{ dayOfWeek: 2, startTime: "17:00", endTime: "20:00" }]);
 await completeProfile(other, "Other User", [{ dayOfWeek: 2, startTime: "18:00", endTime: "21:00" }]);
+
+const firstPhoto = await uploadProfilePhoto(normal);
+const secondPhoto = await uploadProfilePhoto(normal);
+const publishedPhoto = await fetch(firstPhoto.url);
+assertStatus("read published profile photo", publishedPhoto.status, 200);
+if (publishedPhoto.headers.get("content-type") !== "image/webp") {
+  throw new Error("read published profile photo: expected image/webp");
+}
+
+const reorderedPhotos = await request("/v1/me/photos/order", {
+  method: "PATCH",
+  headers: { authorization: `Bearer ${normal.token}` },
+  body: JSON.stringify({ photoIds: [secondPhoto.id, firstPhoto.id] })
+});
+assertStatus("reorder profile photos", reorderedPhotos.status, 200);
+if (reorderedPhotos.body.photos[0].id !== secondPhoto.id) {
+  throw new Error("reorder profile photos: expected requested primary photo");
+}
+
+const unauthorizedPhotoDelete = await request(`/v1/me/photos/${firstPhoto.id}`, {
+  method: "DELETE",
+  headers: { authorization: `Bearer ${other.token}` }
+});
+assertStatus("reject another user's photo deletion", unauthorizedPhotoDelete.status, 404);
+const deletedPhoto = await request(`/v1/me/photos/${firstPhoto.id}`, {
+  method: "DELETE",
+  headers: { authorization: `Bearer ${normal.token}` }
+});
+assertStatus("delete owned profile photo", deletedPhoto.status, 204);
+
+const concurrentPhoto = await uploadProfilePhoto(normal, true);
+assertStatus("retain concurrently finalized photo", (await fetch(concurrentPhoto.url)).status, 200);
 
 const dataExport = await get("/v1/me/export", normal.token);
 assertStatus("export account data", dataExport.status, 200);
@@ -409,6 +487,7 @@ assertStatus(
   401
 );
 
+const deletingPhoto = await uploadProfilePhoto(deleting);
 const deleted = await request("/v1/me", {
   method: "DELETE",
   headers: { authorization: `Bearer ${deleting.token}` },
@@ -416,6 +495,7 @@ const deleted = await request("/v1/me", {
 });
 assertStatus("delete account", deleted.status, 204);
 assertStatus("deleted access rejection", (await get("/v1/me", deleting.token)).status, 401);
+assertStatus("deleted account photo removal", (await fetch(deletingPhoto.url)).status, 404);
 assertStatus(
   "deleted login rejection",
   (await post("/v1/auth/login", { email: deleting.user.email, password })).status,
@@ -710,6 +790,7 @@ console.log(JSON.stringify({
     "block cancellation and report relationship integrity",
     "account deactivation, deletion, and unblock",
     "privacy-safe account data export",
+    "sanitized profile photo upload and ownership",
     "mutual filters and explainable recommendations",
     "schedule suggestions",
     "persisted rally lifecycle",

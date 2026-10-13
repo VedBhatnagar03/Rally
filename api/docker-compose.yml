@@ -25,5 +25,25 @@ services:
       timeout: 5s
       retries: 10
 
+  versitygw:
+    image: versity/versitygw:v1.8.0
+    environment:
+      ROOT_ACCESS_KEY: rally-local
+      ROOT_SECRET_KEY: rally-local-secret
+      VGW_PORT: ":7070"
+      VGW_IAM_DIR: /data/iam
+      VGW_VERSIONING_DIR: /data/versioning
+      VGW_BACKEND: posix
+      VGW_BACKEND_ARGS: /data/s3
+    ports:
+      - "7070:7070"
+    volumes:
+      - versitygw_data:/data/s3
+      - versitygw_versions:/data/versioning
+      - versitygw_iam:/data/iam
+
 volumes:
   postgres_data:
+  versitygw_data:
+  versitygw_versions:
+  versitygw_iam:
