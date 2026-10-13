@@ -15,6 +15,7 @@ const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().default("15m"),
   REFRESH_TOKEN_DAYS: z.coerce.number().int().min(1).max(90).default(30),
   PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
+  POLICY_VERSION: z.string().trim().min(1).max(80).default("2026-10-12-beta"),
   RESEND_API_KEY: optionalSecret,
   EMAIL_FROM: z.string().min(3).default("Rally <onboarding@resend.dev>"),
   CORS_ORIGIN: z.string().default("http://localhost:3000"),

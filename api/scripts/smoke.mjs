@@ -1,6 +1,7 @@
 const baseUrl = process.env.RALLY_API_BASE_URL ?? "http://localhost:4000";
 const adminEmail = process.env.RALLY_SMOKE_ADMIN_EMAIL ?? "naman.test@illinois.edu";
 const password = process.env.RALLY_SMOKE_PASSWORD ?? "correct-horse-battery-staple";
+let currentPolicyVersion;
 
 async function request(path, options = {}) {
   const response = await fetch(`${baseUrl}${path}`, {
@@ -52,7 +53,9 @@ async function createVerifiedUser(prefix, testResend = false) {
   const registration = await post("/v1/auth/register", {
     email,
     password,
-    displayName: prefix
+    displayName: prefix,
+    isAtLeast18: true,
+    policyVersion: currentPolicyVersion
   });
   assertStatus(`${prefix} register`, registration.status, 201);
 
@@ -113,10 +116,28 @@ assertStatus("health", health.status, 200);
 const ready = await get("/ready");
 assertStatus("ready", ready.status, 200);
 
+const currentPolicy = await get("/v1/policies/current");
+assertStatus("current policy metadata", currentPolicy.status, 200);
+currentPolicyVersion = currentPolicy.body.policy?.version;
+if (!currentPolicyVersion || currentPolicy.body.policy.minimumAge !== 18) {
+  throw new Error("current policy metadata: expected version and 18+ minimum age");
+}
+
+const outdatedPolicy = await post("/v1/auth/register", {
+  email: `outdated.${Date.now()}@illinois.edu`,
+  password,
+  displayName: "Outdated Policy",
+  isAtLeast18: true,
+  policyVersion: "outdated-policy"
+});
+assertStatus("reject outdated policy consent", outdatedPolicy.status, 409);
+
 const nonUiuc = await post("/v1/auth/register", {
   email: `outsider.${Date.now()}@example.com`,
   password,
-  displayName: "Outsider"
+  displayName: "Outsider",
+  isAtLeast18: true,
+  policyVersion: currentPolicyVersion
 });
 assertStatus("non-UIUC register", nonUiuc.status, 400);
 
@@ -125,6 +146,16 @@ const adminLogin = await post("/v1/auth/login", {
   password
 });
 assertStatus("admin login", adminLogin.status, 200);
+
+const migratedConsent = await post(
+  "/v1/me/policy-consent",
+  { isAtLeast18: true, policyVersion: currentPolicyVersion },
+  adminLogin.body.token
+);
+assertStatus("record existing-account policy consent", migratedConsent.status, 200);
+if (migratedConsent.body.consent.policyVersion !== currentPolicyVersion) {
+  throw new Error("record existing-account policy consent: expected current policy version");
+}
 
 const refreshedAdmin = await post("/v1/auth/refresh", {
   refreshToken: adminLogin.body.refreshToken
@@ -553,6 +584,7 @@ console.log(JSON.stringify({
   checks: [
     "health",
     "ready",
+    "versioned 18+ policy consent",
     "non-UIUC rejection",
     "verification resend and superseded-token rejection",
     "refresh rotation and replay rejection",

@@ -68,12 +68,14 @@ Current foundation:
 
 - `GET /health`
 - `GET /ready`
+- `GET /v1/policies/current`
 - `POST /v1/auth/register`
 - `POST /v1/auth/verify-email`
 - `POST /v1/auth/forgot-password`
 - `POST /v1/auth/reset-password`
 - `POST /v1/auth/login`
 - `GET /v1/me`
+- `POST /v1/me/policy-consent`
 - `GET /v1/me/export`
 - `PUT /v1/me/profile`
 - `GET /v1/recommendations`

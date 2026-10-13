@@ -5,6 +5,8 @@ import { deactivateAccountSchema, deleteAccountSchema } from "../modules/account
 import { verifyPassword, hashPassword } from "../utils/password.js";
 import { createOpaqueToken } from "../utils/tokens.js";
 import { writeAuditLog } from "../utils/audit.js";
+import { policyConsentSchema } from "../modules/policies/schemas.js";
+import { env } from "../config/env.js";
 
 export async function meRoutes(app: FastifyInstance) {
   app.get("/", { preHandler: app.authenticate }, async (request) => {
@@ -15,11 +17,39 @@ export async function meRoutes(app: FastifyInstance) {
         email: true,
         status: true,
         role: true,
+        ageAttestedAt: true,
+        policyAcceptedAt: true,
+        policyVersion: true,
         profile: true,
         sportProfiles: true,
         availability: true
       }
     });
+  });
+
+  app.post("/policy-consent", { preHandler: app.authenticate }, async (request, reply) => {
+    const body = policyConsentSchema.parse(request.body);
+    if (body.policyVersion !== env.POLICY_VERSION) {
+      return reply.code(409).send({ error: "Policy version is outdated; review the current policies" });
+    }
+
+    const acceptedAt = new Date();
+    const user = await prisma.user.update({
+      where: { id: request.user.sub },
+      data: {
+        ageAttestedAt: acceptedAt,
+        policyAcceptedAt: acceptedAt,
+        policyVersion: env.POLICY_VERSION
+      },
+      select: { ageAttestedAt: true, policyAcceptedAt: true, policyVersion: true }
+    });
+    await writeAuditLog({
+      userId: request.user.sub,
+      action: "account.policy_consent",
+      metadata: { policyVersion: env.POLICY_VERSION },
+      request
+    });
+    return { consent: user };
   });
 
   app.get(
@@ -43,6 +73,9 @@ export async function meRoutes(app: FastifyInstance) {
             updatedAt: true,
             lastActiveAt: true,
             deactivatedAt: true,
+            ageAttestedAt: true,
+            policyAcceptedAt: true,
+            policyVersion: true,
             profile: true,
             sportProfiles: true,
             availability: true,

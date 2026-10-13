@@ -2,7 +2,7 @@
 
 ## Core Tables
 
-- `User`: login identity, UIUC email, password hash, verification/account-lifecycle status, admin role and throttled last-active timestamp.
+- `User`: login identity, UIUC email, password hash, verification/account-lifecycle status, admin role, throttled last-active timestamp and versioned 18+/policy consent timestamps.
 - `EmailVerificationToken`: hash-only email verification tokens.
 - `PasswordResetToken`: hash-only, single-use account recovery tokens with a one-hour expiry.
 - `RefreshToken`: hash-only, rotating session tokens with expiry and revocation.

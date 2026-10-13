@@ -39,6 +39,9 @@ export async function authRoutes(app: FastifyInstance) {
 
   app.post("/register", { config: { rateLimit: { max: 10, timeWindow: "1 hour" } } }, async (request, reply) => {
     const body = registerSchema.parse(request.body);
+    if (body.policyVersion !== env.POLICY_VERSION) {
+      return reply.code(409).send({ error: "Policy version is outdated; review the current policies" });
+    }
     const email = assertUiucEmail(body.email);
     const verificationToken = createOpaqueToken();
     const verificationTokenHash = hashToken(verificationToken);
@@ -51,6 +54,9 @@ export async function authRoutes(app: FastifyInstance) {
         passwordHash: await hashPassword(body.password),
         status: "PENDING_EMAIL_VERIFICATION",
         role,
+        ageAttestedAt: new Date(),
+        policyAcceptedAt: new Date(),
+        policyVersion: env.POLICY_VERSION,
         emailVerificationTokens: {
           create: {
             tokenHash: verificationTokenHash,

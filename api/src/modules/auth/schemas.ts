@@ -1,10 +1,13 @@
 import { z } from "zod";
+import { policyConsentSchema } from "../policies/schemas.js";
 
-export const registerSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(12).max(128),
-  displayName: z.string().trim().min(1).max(80)
-});
+export const registerSchema = z
+  .object({
+    email: z.string().email(),
+    password: z.string().min(12).max(128),
+    displayName: z.string().trim().min(1).max(80)
+  })
+  .merge(policyConsentSchema);
 
 export const loginSchema = z.object({
   email: z.string().email(),
