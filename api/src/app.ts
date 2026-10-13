@@ -15,6 +15,7 @@ import { feedbackRoutes } from "./routes/feedback.js";
 import { meRoutes } from "./routes/me.js";
 import { policyRoutes } from "./routes/policies.js";
 import { photoRoutes } from "./routes/photos.js";
+import { profileOptionRoutes } from "./routes/profile-options.js";
 import { notificationRoutes } from "./routes/notifications.js";
 import { rallyRoutes } from "./routes/rallies.js";
 import { recommendationRoutes } from "./routes/recommendations.js";
@@ -99,6 +100,7 @@ export function buildApp() {
   app.register(authRoutes, { prefix: "/v1/auth" });
   app.register(policyRoutes, { prefix: "/v1/policies" });
   app.register(photoRoutes, { prefix: "/v1/me/photos" });
+  app.register(profileOptionRoutes, { prefix: "/v1/profile-options" });
   app.register(notificationRoutes, { prefix: "/v1/notifications" });
   app.register(meRoutes, { prefix: "/v1/me" });
   app.register(recommendationRoutes, { prefix: "/v1/recommendations" });

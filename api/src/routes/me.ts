@@ -21,7 +21,7 @@ export async function meRoutes(app: FastifyInstance) {
         ageAttestedAt: true,
         policyAcceptedAt: true,
         policyVersion: true,
-        profile: true,
+        profile: { include: { prompts: { orderBy: { sortOrder: "asc" } } } },
         sportProfiles: true,
         availability: true,
         photos: { orderBy: { sortOrder: "asc" } }
@@ -78,7 +78,7 @@ export async function meRoutes(app: FastifyInstance) {
             ageAttestedAt: true,
             policyAcceptedAt: true,
             policyVersion: true,
-            profile: true,
+            profile: { include: { prompts: { orderBy: { sortOrder: "asc" } } } },
             sportProfiles: true,
             availability: true,
             photos: { orderBy: { sortOrder: "asc" } }
@@ -174,8 +174,8 @@ export async function meRoutes(app: FastifyInstance) {
   app.put("/profile", { preHandler: app.authenticate }, async (request) => {
     const body = upsertProfileSchema.parse(request.body);
 
-    await prisma.$transaction([
-      prisma.profile.upsert({
+    await prisma.$transaction(async (tx) => {
+      const profile = await tx.profile.upsert({
         where: { userId: request.user.sub },
         create: {
           userId: request.user.sub,
@@ -190,6 +190,7 @@ export async function meRoutes(app: FastifyInstance) {
           datingIntent: body.datingIntent,
           interestedIn: body.interestedIn,
           campusZone: body.campusZone,
+          interests: body.interests,
           profileComplete: true
         },
         update: {
@@ -204,18 +205,27 @@ export async function meRoutes(app: FastifyInstance) {
           datingIntent: body.datingIntent,
           interestedIn: body.interestedIn,
           campusZone: body.campusZone,
+          interests: body.interests,
           profileComplete: true
         }
-      }),
-      prisma.sportProfile.deleteMany({ where: { userId: request.user.sub } }),
-      prisma.availabilityWindow.deleteMany({ where: { userId: request.user.sub } }),
-      prisma.sportProfile.createMany({
+      });
+      await tx.sportProfile.deleteMany({ where: { userId: request.user.sub } });
+      await tx.availabilityWindow.deleteMany({ where: { userId: request.user.sub } });
+      await tx.profilePrompt.deleteMany({ where: { profileId: profile.id } });
+      await tx.sportProfile.createMany({
         data: body.sports.map((sport) => ({ ...sport, userId: request.user.sub }))
-      }),
-      prisma.availabilityWindow.createMany({
+      });
+      await tx.availabilityWindow.createMany({
         data: body.availability.map((availability) => ({ ...availability, userId: request.user.sub }))
-      })
-    ]);
+      });
+      await tx.profilePrompt.createMany({
+        data: body.prompts.map((prompt, sortOrder) => ({
+          profileId: profile.id,
+          ...prompt,
+          sortOrder
+        }))
+      });
+    });
 
     return { ok: true };
   });

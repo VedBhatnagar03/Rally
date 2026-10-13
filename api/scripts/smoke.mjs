@@ -106,6 +106,17 @@ async function completeProfile(userSession, displayName, availability) {
       datingIntent: "DATING",
       interestedIn: [],
       campusZone: "Main Quad",
+      interests: ["Coffee", "Live music", "Campus events"],
+      prompts: [
+        {
+          promptKey: "IDEAL_FIRST_RALLY",
+          answer: "A relaxed tennis set followed by coffee."
+        },
+        {
+          promptKey: "PERFECT_WEEKEND",
+          answer: "A morning match and something live on campus."
+        }
+      ],
       sports: [
         {
           sport: "TENNIS",
@@ -175,6 +186,12 @@ assertStatus("current policy metadata", currentPolicy.status, 200);
 currentPolicyVersion = currentPolicy.body.policy?.version;
 if (!currentPolicyVersion || currentPolicy.body.policy.minimumAge !== 18) {
   throw new Error("current policy metadata: expected version and 18+ minimum age");
+}
+
+const promptCatalog = await get("/v1/profile-options/prompts");
+assertStatus("profile prompt catalog", promptCatalog.status, 200);
+if (!Array.isArray(promptCatalog.body.prompts) || promptCatalog.body.prompts.length !== 6) {
+  throw new Error("profile prompt catalog: expected six curated prompts");
 }
 
 const outdatedPolicy = await post("/v1/auth/register", {
@@ -291,15 +308,24 @@ await completeProfile(schedulerB, "Scheduler B", [{ dayOfWeek: 2, startTime: "18
 
 const recommendations = await get("/v1/recommendations", schedulerA.token);
 assertStatus("explainable recommendations", recommendations.status, 200);
-const schedulerRecommendation = recommendations.body.recommendations[0];
+const schedulerRecommendation = recommendations.body.recommendations.find(
+  (recommendation) => recommendation.userId === schedulerB.user.id
+);
 if (
   !schedulerRecommendation ||
   !Array.isArray(schedulerRecommendation.reasons) ||
   schedulerRecommendation.reasons.length === 0 ||
   !Array.isArray(schedulerRecommendation.breakdown) ||
-  schedulerRecommendation.breakdown.length !== 5
+  schedulerRecommendation.breakdown.length !== 5 ||
+  schedulerRecommendation.profile?.prompts?.length !== 2 ||
+  schedulerRecommendation.profile?.interests?.length !== 3 ||
+  !Array.isArray(schedulerRecommendation.profile?.photos) ||
+  schedulerRecommendation.profile?.sports?.some((sport) => "userId" in sport || "id" in sport) ||
+  schedulerRecommendation.profile?.photos?.some((photo) => "storageKey" in photo || "userId" in photo) ||
+  "interestedIn" in schedulerRecommendation.profile ||
+  "availability" in schedulerRecommendation.profile
 ) {
-  throw new Error("explainable recommendations: expected reasons and five score components");
+  throw new Error("explainable recommendations: expected reasons and a privacy-shaped discovery profile");
 }
 
 await completeProfile(normal, "Normal User", [{ dayOfWeek: 2, startTime: "17:00", endTime: "20:00" }]);
@@ -792,6 +818,7 @@ console.log(JSON.stringify({
     "privacy-safe account data export",
     "sanitized profile photo upload and ownership",
     "mutual filters and explainable recommendations",
+    "profile prompts, interests, and discovery details",
     "schedule suggestions",
     "persisted rally lifecycle",
     "duplicate and invalid Rally rejection",

@@ -199,12 +199,29 @@ model Profile {
   datingIntent    DatingIntent @default(DATING)
   interestedIn    Gender[]
   campusZone      String?
+  interests       String[]     @default([])
   trustScore      Int          @default(50)
   profileComplete Boolean      @default(false)
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  prompts ProfilePrompt[]
+}
+
+model ProfilePrompt {
+  id        String   @id @default(cuid())
+  profileId String
+  promptKey String
+  answer    String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, promptKey])
+  @@index([profileId, sortOrder])
 }
 
 model SportProfile {

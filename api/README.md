@@ -79,6 +79,7 @@ Current foundation:
 - `POST /v1/me/policy-consent`
 - `GET /v1/me/export`
 - `PUT /v1/me/profile`
+- `GET /v1/profile-options/prompts`
 - `POST /v1/me/photos/upload-intents`
 - `POST /v1/me/photos/upload-intents/:uploadId/complete`
 - `PATCH /v1/me/photos/order`
@@ -126,3 +127,5 @@ npm run dev
 In development, `POST /v1/auth/register` returns a `devVerificationToken` so the team can test email verification without an email provider. Production responses never include that token.
 
 Profile photos use private presigned uploads. The API decodes, rotates, bounds, strips metadata from, and converts each image to WebP before publishing it. The local Compose stack provides S3-compatible storage through VersityGW; run `npm run storage:init` after first startup. Production may use any S3-compatible provider with the photo-storage environment variables.
+
+Onboarding supports up to three answers from the reviewed prompt catalog and up to twelve short interests. Recommendations return the candidate's public discovery profile while withholding email, exact availability, and dating-filter preferences.

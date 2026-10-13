@@ -27,7 +27,13 @@ export async function recommendationRoutes(app: FastifyInstance) {
           none: { blockedId: currentUser.id }
         }
       },
-      include: { profile: true, sportProfiles: true, availability: true },
+      include: {
+        profile: { include: { prompts: { orderBy: { sortOrder: "asc" } } } },
+        sportProfiles: true,
+        availability: true,
+        photos: { orderBy: { sortOrder: "asc" } }
+      },
+      orderBy: { lastActiveAt: { sort: "desc", nulls: "last" } },
       take: 50
     });
 
@@ -52,7 +58,33 @@ export async function recommendationRoutes(app: FastifyInstance) {
           }
         );
 
-        return scored ? [scored] : [];
+        return scored
+          ? [{
+              ...scored,
+              profile: {
+                age: candidate.profile.age,
+                major: candidate.profile.major,
+                classYear: candidate.profile.classYear,
+                bio: candidate.profile.bio,
+                gender: candidate.profile.gender,
+                datingIntent: candidate.profile.datingIntent,
+                campusZone: candidate.profile.campusZone,
+                interests: candidate.profile.interests,
+                sports: candidate.sportProfiles.map(({ sport, skillLevel, intensity, favorite }) => ({
+                  sport,
+                  skillLevel,
+                  intensity,
+                  favorite
+                })),
+                photos: candidate.photos.map(({ id, url, sortOrder }) => ({ id, url, sortOrder })),
+                prompts: candidate.profile.prompts.map(({ promptKey, answer, sortOrder }) => ({
+                  promptKey,
+                  answer,
+                  sortOrder
+                }))
+              }
+            }]
+          : [];
       })
       .sort((a, b) => b.score - a.score)
       .slice(0, 10);
