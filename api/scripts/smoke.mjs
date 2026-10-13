@@ -490,23 +490,29 @@ const pastRally = await post(
 );
 assertStatus("reject past rally window", pastRally.status, 400);
 
-const accepted = await post(
-  `/v1/rallies/${rally.body.rally.id}/respond`,
-  { status: "ACCEPTED" },
-  schedulerB.token
-);
-assertStatus("accept persisted rally", accepted.status, 200);
+const acceptAttempts = await Promise.all([
+  post(`/v1/rallies/${rally.body.rally.id}/respond`, { status: "ACCEPTED" }, schedulerB.token),
+  post(`/v1/rallies/${rally.body.rally.id}/respond`, { status: "ACCEPTED" }, schedulerB.token)
+]);
+const acceptStatuses = acceptAttempts.map(({ status }) => status).sort();
+if (acceptStatuses[0] !== 200 || acceptStatuses[1] !== 409) {
+  throw new Error(`atomic accept: expected one 200 and one 409, got ${acceptStatuses.join(", ")}`);
+}
 
-const scheduled = await post(
-  `/v1/rallies/${rally.body.rally.id}/schedule`,
-  {
-    proposedStartAt: dateTimeForSuggestion(selectedSuggestion, selectedSuggestion.startTime),
-    proposedEndAt: dateTimeForSuggestion(selectedSuggestion, selectedSuggestion.endTime),
-    venueId: selectedSuggestion.venue.id
-  },
-  schedulerA.token
-);
-assertStatus("select persisted schedule", scheduled.status, 200);
+const scheduleBody = {
+  proposedStartAt: dateTimeForSuggestion(selectedSuggestion, selectedSuggestion.startTime),
+  proposedEndAt: dateTimeForSuggestion(selectedSuggestion, selectedSuggestion.endTime),
+  venueId: selectedSuggestion.venue.id
+};
+const scheduleAttempts = await Promise.all([
+  post(`/v1/rallies/${rally.body.rally.id}/schedule`, scheduleBody, schedulerA.token),
+  post(`/v1/rallies/${rally.body.rally.id}/schedule`, scheduleBody, schedulerB.token)
+]);
+const scheduleStatuses = scheduleAttempts.map(({ status }) => status).sort();
+if (scheduleStatuses[0] !== 200 || scheduleStatuses[1] !== 409) {
+  throw new Error(`atomic schedule: expected one 200 and one 409, got ${scheduleStatuses.join(", ")}`);
+}
+const scheduled = scheduleAttempts.find(({ status }) => status === 200);
 
 if (scheduled.body.rally.venueId !== selectedSuggestion.venue.id) {
   throw new Error("select persisted schedule: expected venue to persist");
@@ -522,8 +528,16 @@ const booked = await post(
 );
 assertStatus("persist court booking", booked.status, 200);
 
-const completed = await post(`/v1/rallies/${rally.body.rally.id}/complete`, {}, schedulerA.token);
-assertStatus("complete persisted rally", completed.status, 200);
+const completionAttempts = await Promise.all([
+  post(`/v1/rallies/${rally.body.rally.id}/complete`, {}, schedulerA.token),
+  post(`/v1/rallies/${rally.body.rally.id}/complete`, {}, schedulerB.token)
+]);
+for (const completion of completionAttempts) {
+  assertStatus("idempotent concurrent completion", completion.status, 200);
+}
+if (completionAttempts[0].body.rally.completedAt !== completionAttempts[1].body.rally.completedAt) {
+  throw new Error("idempotent concurrent completion: expected one persisted completion timestamp");
+}
 
 const feedbackA = await post(
   `/v1/feedback/rallies/${rally.body.rally.id}`,
@@ -558,15 +572,18 @@ const cancellable = await post(
 );
 assertStatus("create cancellable rally", cancellable.status, 201);
 
-const cancelled = await post(
-  `/v1/rallies/${cancellable.body.rally.id}/cancel`,
-  { reason: "Plans changed" },
-  schedulerA.token
-);
-assertStatus("cancel rally", cancelled.status, 200);
+const cancelAttempts = await Promise.all([
+  post(`/v1/rallies/${cancellable.body.rally.id}/cancel`, { reason: "Plans changed" }, schedulerA.token),
+  post(`/v1/rallies/${cancellable.body.rally.id}/cancel`, { reason: "Plans changed" }, schedulerB.token)
+]);
+const cancelStatuses = cancelAttempts.map(({ status }) => status).sort();
+if (cancelStatuses[0] !== 200 || cancelStatuses[1] !== 409) {
+  throw new Error(`atomic cancellation: expected one 200 and one 409, got ${cancelStatuses.join(", ")}`);
+}
+const cancelled = cancelAttempts.find(({ status }) => status === 200);
 if (
   cancelled.body.rally.status !== "CANCELLED" ||
-  cancelled.body.rally.cancelledById !== schedulerA.user.id ||
+  ![schedulerA.user.id, schedulerB.user.id].includes(cancelled.body.rally.cancelledById) ||
   cancelled.body.rally.cancellationReason !== "Plans changed"
 ) {
   throw new Error("cancel rally: expected status, actor, and reason to persist");
@@ -604,6 +621,7 @@ console.log(JSON.stringify({
     "persisted rally lifecycle",
     "duplicate and invalid Rally rejection",
     "explicit scheduling and cancellation states",
+    "atomic concurrent Rally transitions",
     "persisted feedback outcome"
   ]
 }, null, 2));
