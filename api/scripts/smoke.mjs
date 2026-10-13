@@ -30,6 +30,14 @@ async function get(path, token) {
   });
 }
 
+async function patch(path, body, token) {
+  return request(path, {
+    method: "PATCH",
+    headers: token ? { authorization: `Bearer ${token}` } : undefined,
+    body: JSON.stringify(body)
+  });
+}
+
 function assertStatus(name, actual, expected) {
   if (actual !== expected) {
     throw new Error(`${name}: expected ${expected}, got ${actual}`);
@@ -466,6 +474,16 @@ const rally = await post(
 );
 assertStatus("create persisted rally", rally.status, 201);
 
+const receivedNotifications = await get("/v1/notifications?unreadOnly=true", schedulerB.token);
+assertStatus("list unread notifications", receivedNotifications.status, 200);
+const received = receivedNotifications.body.notifications.filter(
+  (notification) =>
+    notification.rallyId === rally.body.rally.id && notification.type === "RALLY_RECEIVED"
+);
+if (received.length !== 1 || receivedNotifications.body.unreadCount < 1) {
+  throw new Error("create Rally notification: expected one unread receiver notification");
+}
+
 const duplicateRally = await post(
   "/v1/rallies",
   {
@@ -499,6 +517,15 @@ if (acceptStatuses[0] !== 200 || acceptStatuses[1] !== 409) {
   throw new Error(`atomic accept: expected one 200 and one 409, got ${acceptStatuses.join(", ")}`);
 }
 
+const acceptedNotifications = await get("/v1/notifications", schedulerA.token);
+const accepted = acceptedNotifications.body.notifications.filter(
+  (notification) =>
+    notification.rallyId === rally.body.rally.id && notification.type === "RALLY_ACCEPTED"
+);
+if (accepted.length !== 1) {
+  throw new Error("atomic accept notification: expected exactly one sender notification");
+}
+
 const scheduleBody = {
   proposedStartAt: dateTimeForSuggestion(selectedSuggestion, selectedSuggestion.startTime),
   proposedEndAt: dateTimeForSuggestion(selectedSuggestion, selectedSuggestion.endTime),
@@ -521,6 +548,20 @@ if (scheduled.body.rally.status !== "SCHEDULED") {
   throw new Error("select persisted schedule: expected explicit SCHEDULED state");
 }
 
+const [scheduledNotificationsA, scheduledNotificationsB] = await Promise.all([
+  get("/v1/notifications", schedulerA.token),
+  get("/v1/notifications", schedulerB.token)
+]);
+const scheduledNotificationCount = [scheduledNotificationsA, scheduledNotificationsB]
+  .flatMap(({ body }) => body.notifications)
+  .filter(
+    (notification) =>
+      notification.rallyId === rally.body.rally.id && notification.type === "RALLY_SCHEDULED"
+  ).length;
+if (scheduledNotificationCount !== 1) {
+  throw new Error("atomic schedule notification: expected exactly one other-participant notification");
+}
+
 const booked = await post(
   `/v1/rallies/${rally.body.rally.id}/court-booking`,
   { courtStatus: "BOOKED", bookingReference: "smoke-test-booking" },
@@ -537,6 +578,20 @@ for (const completion of completionAttempts) {
 }
 if (completionAttempts[0].body.rally.completedAt !== completionAttempts[1].body.rally.completedAt) {
   throw new Error("idempotent concurrent completion: expected one persisted completion timestamp");
+}
+
+const [completedNotificationsA, completedNotificationsB] = await Promise.all([
+  get("/v1/notifications", schedulerA.token),
+  get("/v1/notifications", schedulerB.token)
+]);
+for (const notifications of [completedNotificationsA, completedNotificationsB]) {
+  const completed = notifications.body.notifications.filter(
+    (notification) =>
+      notification.rallyId === rally.body.rally.id && notification.type === "RALLY_COMPLETED"
+  );
+  if (completed.length !== 1) {
+    throw new Error("idempotent completion notification: expected one notification per participant");
+  }
 }
 
 const feedbackA = await post(
@@ -558,6 +613,33 @@ assertStatus("read rally outcome", outcome.status, 200);
 
 if (!outcome.body.outcome.bothResponded || !outcome.body.outcome.isMutualMatch) {
   throw new Error("read rally outcome: expected mutual match after two yes feedback entries");
+}
+
+const [mutualNotificationsA, mutualNotificationsB] = await Promise.all([
+  get("/v1/notifications", schedulerA.token),
+  get("/v1/notifications", schedulerB.token)
+]);
+for (const notifications of [mutualNotificationsA, mutualNotificationsB]) {
+  const mutual = notifications.body.notifications.filter(
+    (notification) =>
+      notification.rallyId === rally.body.rally.id && notification.type === "MUTUAL_RALLY_AGAIN"
+  );
+  if (mutual.length !== 1) {
+    throw new Error("mutual Rally notification: expected one notification per participant");
+  }
+}
+
+const markedRead = await patch(
+  `/v1/notifications/${accepted[0].id}/read`,
+  {},
+  schedulerA.token
+);
+assertStatus("mark notification read", markedRead.status, 204);
+const readAll = await post("/v1/notifications/read-all", {}, schedulerA.token);
+assertStatus("mark all notifications read", readAll.status, 200);
+const unreadAfterReadAll = await get("/v1/notifications?unreadOnly=true", schedulerA.token);
+if (unreadAfterReadAll.body.unreadCount !== 0 || unreadAfterReadAll.body.notifications.length !== 0) {
+  throw new Error("mark all notifications read: expected an empty unread inbox");
 }
 
 const cancellable = await post(
@@ -587,6 +669,18 @@ if (
   cancelled.body.rally.cancellationReason !== "Plans changed"
 ) {
   throw new Error("cancel rally: expected status, actor, and reason to persist");
+}
+
+const cancellationRecipient = cancelled.body.rally.cancelledById === schedulerA.user.id
+  ? schedulerB
+  : schedulerA;
+const cancellationNotifications = await get("/v1/notifications", cancellationRecipient.token);
+const cancellationCount = cancellationNotifications.body.notifications.filter(
+  (notification) =>
+    notification.rallyId === cancellable.body.rally.id && notification.type === "RALLY_CANCELLED"
+).length;
+if (cancellationCount !== 1) {
+  throw new Error("atomic cancellation notification: expected one other-participant notification");
 }
 
 const acceptCancelled = await post(
@@ -622,6 +716,7 @@ console.log(JSON.stringify({
     "duplicate and invalid Rally rejection",
     "explicit scheduling and cancellation states",
     "atomic concurrent Rally transitions",
-    "persisted feedback outcome"
+    "persisted feedback outcome",
+    "durable lifecycle notifications"
   ]
 }, null, 2));

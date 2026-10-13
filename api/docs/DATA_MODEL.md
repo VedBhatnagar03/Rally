@@ -13,6 +13,7 @@
 - `Venue`: UIUC-compatible court locations and handoff links.
 - `Rally`: explicit pending, accepted, scheduled, completed/cancelled meetup state with lifecycle timestamps and cancellation attribution; only one active Rally may exist per user pair.
 - `RallyFeedback`: private post-Rally feedback.
+- `Notification`: durable, per-user Rally lifecycle events with read state and duplicate prevention.
 - `Block`: immediate discovery and interaction exclusion.
 - `Report`: safety/moderation queue with status, resolution note, timestamp and resolving administrator.
 - `AnalyticsEvent`: funnel and behavior instrumentation.
@@ -29,3 +30,4 @@
 - Venue data is campus-area level, not precise residence or live location.
 - Operational incidents never store request bodies, authorization headers or stack traces.
 - User exports include only the requester's account data and shared Rally records; secrets and reports submitted by other users are excluded.
+- Notifications are visible only to their recipient and are removed when that account is deleted.

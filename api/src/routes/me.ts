@@ -61,7 +61,7 @@ export async function meRoutes(app: FastifyInstance) {
     async (request, reply) => {
       await writeAuditLog({ userId: request.user.sub, action: "account.data_export", request });
 
-      const [account, rallies, feedback, blocks, reports, analyticsEvents, auditLogs] = await Promise.all([
+      const [account, rallies, feedback, blocks, reports, notifications, analyticsEvents, auditLogs] = await Promise.all([
         prisma.user.findUniqueOrThrow({
           where: { id: request.user.sub },
           select: {
@@ -137,6 +137,10 @@ export async function meRoutes(app: FastifyInstance) {
           },
           orderBy: { createdAt: "desc" }
         }),
+        prisma.notification.findMany({
+          where: { userId: request.user.sub },
+          orderBy: { createdAt: "desc" }
+        }),
         prisma.analyticsEvent.findMany({
           where: { userId: request.user.sub },
           orderBy: { createdAt: "desc" }
@@ -158,6 +162,7 @@ export async function meRoutes(app: FastifyInstance) {
         feedback,
         blocks,
         reports,
+        notifications,
         analyticsEvents,
         auditLogs
       };
@@ -266,6 +271,7 @@ export async function meRoutes(app: FastifyInstance) {
       prisma.passwordResetToken.deleteMany({ where: { userId: user.id } }),
       prisma.refreshToken.deleteMany({ where: { userId: user.id } }),
       prisma.analyticsEvent.deleteMany({ where: { userId: user.id } }),
+      prisma.notification.deleteMany({ where: { userId: user.id } }),
       prisma.block.deleteMany({
         where: { OR: [{ blockerId: user.id }, { blockedId: user.id }] }
       }),
