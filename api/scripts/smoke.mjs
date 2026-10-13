@@ -908,6 +908,27 @@ const cancellable = await post(
 );
 assertStatus("create cancellable rally", cancellable.status, 201);
 
+const acceptedCancellable = await post(
+  `/v1/rallies/${cancellable.body.rally.id}/respond`,
+  { status: "ACCEPTED" },
+  schedulerB.token
+);
+assertStatus("accept cancellable rally", acceptedCancellable.status, 200);
+
+const scheduledCancellable = await post(
+  `/v1/rallies/${cancellable.body.rally.id}/schedule`,
+  scheduleBody,
+  schedulerA.token
+);
+assertStatus("schedule cancellable rally", scheduledCancellable.status, 200);
+
+const bookedCancellable = await post(
+  `/v1/rallies/${cancellable.body.rally.id}/court-booking`,
+  { courtStatus: "BOOKED", courtNumber: "7", bookingReference: "cancel-handoff" },
+  schedulerA.token
+);
+assertStatus("book cancellable rally", bookedCancellable.status, 200);
+
 const cancelAttempts = await Promise.all([
   post(`/v1/rallies/${cancellable.body.rally.id}/cancel`, { reason: "Plans changed" }, schedulerA.token),
   post(`/v1/rallies/${cancellable.body.rally.id}/cancel`, { reason: "Plans changed" }, schedulerB.token)
@@ -920,9 +941,13 @@ const cancelled = cancelAttempts.find(({ status }) => status === 200);
 if (
   cancelled.body.rally.status !== "CANCELLED" ||
   ![schedulerA.user.id, schedulerB.user.id].includes(cancelled.body.rally.cancelledById) ||
-  cancelled.body.rally.cancellationReason !== "Plans changed"
+  cancelled.body.rally.cancellationReason !== "Plans changed" ||
+  cancelled.body.rally.courtStatus !== "BOOKED" ||
+  cancelled.body.rally.bookingOwnerId !== schedulerA.user.id ||
+  cancelled.body.rally.courtNumber !== "7" ||
+  cancelled.body.rally.bookingReference !== "cancel-handoff"
 ) {
-  throw new Error("cancel rally: expected status, actor, and reason to persist");
+  throw new Error("cancel rally: expected status, actor, reason, and booking handoff to persist");
 }
 
 const cancellationRecipient = cancelled.body.rally.cancelledById === schedulerA.user.id
@@ -975,6 +1000,7 @@ console.log(JSON.stringify({
     "duplicate and invalid Rally rejection",
     "explicit scheduling and cancellation states",
     "atomic immutable court booking ownership",
+    "external booking handoff survives cancellation",
     "scheduled-start completion boundary",
     "atomic concurrent Rally transitions",
     "persisted feedback outcome",

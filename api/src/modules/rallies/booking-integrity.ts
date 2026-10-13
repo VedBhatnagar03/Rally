@@ -24,3 +24,14 @@ export function isSameConfirmedBooking(
     stored.bookingReference === (submitted.bookingReference ?? null)
   );
 }
+
+export function courtDataAfterCancellation(courtStatus: string) {
+  return courtStatus === "BOOKED"
+    ? {}
+    : {
+        courtStatus: "NOT_STARTED" as const,
+        courtNumber: null,
+        bookingReference: null,
+        bookingOwnerId: null
+      };
+}
