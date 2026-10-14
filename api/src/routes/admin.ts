@@ -3,6 +3,7 @@ import { prisma } from "../db/prisma.js";
 import {
   adminListQuerySchema,
   adminSummaryQuerySchema,
+  auditLogListQuerySchema,
   incidentListQuerySchema,
   resolveIncidentSchema,
   updateReportSchema,
@@ -258,6 +259,43 @@ export async function adminRoutes(app: FastifyInstance) {
       take: limit
     });
     return { incidents };
+  });
+
+  app.get("/audit-logs", { preHandler: app.authorizeAdmin }, async (request, reply) => {
+    const { action, actorUserId, cursor, limit } = auditLogListQuerySchema.parse(request.query);
+    const where = {
+      ...(action ? { action } : {}),
+      ...(actorUserId ? { userId: actorUserId } : {})
+    };
+
+    if (cursor) {
+      const cursorExists = await prisma.auditLog.count({ where: { id: cursor, ...where } });
+      if (cursorExists !== 1) return reply.code(400).send({ error: "Invalid audit log cursor" });
+    }
+
+    const auditLogs = await prisma.auditLog.findMany({
+      where,
+      select: {
+        id: true,
+        action: true,
+        metadata: true,
+        ipAddress: true,
+        userAgent: true,
+        createdAt: true,
+        user: { select: { id: true, email: true, status: true, role: true } }
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: limit + 1,
+      cursor: cursor ? { id: cursor } : undefined,
+      skip: cursor ? 1 : undefined
+    });
+    const hasMore = auditLogs.length > limit;
+    const page = hasMore ? auditLogs.slice(0, limit) : auditLogs;
+
+    return {
+      auditLogs: page,
+      nextCursor: hasMore ? page.at(-1)?.id ?? null : null
+    };
   });
 
   app.patch("/incidents/:incidentId/resolve", { preHandler: app.authorizeAdmin }, async (request, reply) => {

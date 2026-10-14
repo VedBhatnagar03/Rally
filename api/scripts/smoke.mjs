@@ -533,6 +533,32 @@ const reactivated = await request(`/v1/admin/users/${other.user.id}/status`, {
 });
 assertStatus("reactivate user", reactivated.status, 200);
 
+const normalAuditLogs = await get("/v1/admin/audit-logs", normal.token);
+assertStatus("normal audit log rejection", normalAuditLogs.status, 403);
+
+const auditLogPage = await get(
+  `/v1/admin/audit-logs?action=admin.user_status_updated&actorUserId=${adminLogin.body.user.id}&limit=1`,
+  adminLogin.body.token
+);
+assertStatus("admin audit log inspection", auditLogPage.status, 200);
+if (
+  auditLogPage.body.auditLogs.length !== 1 ||
+  auditLogPage.body.auditLogs[0].action !== "admin.user_status_updated" ||
+  auditLogPage.body.auditLogs[0].user?.id !== adminLogin.body.user.id ||
+  !auditLogPage.body.nextCursor
+) {
+  throw new Error("admin audit log inspection: expected a filtered first page and cursor");
+}
+
+const olderAuditLogPage = await get(
+  `/v1/admin/audit-logs?action=admin.user_status_updated&actorUserId=${adminLogin.body.user.id}&limit=1&cursor=${auditLogPage.body.nextCursor}`,
+  adminLogin.body.token
+);
+assertStatus("admin audit log pagination", olderAuditLogPage.status, 200);
+if (olderAuditLogPage.body.auditLogs.length !== 1) {
+  throw new Error("admin audit log pagination: expected an older matching event");
+}
+
 const deactivated = await post(
   "/v1/me/deactivate",
   { password, reason: "Smoke test deactivation" },
@@ -1034,6 +1060,7 @@ console.log(JSON.stringify({
     "admin authorization",
     "founder funnel and operational metrics",
     "normal admin rejection",
+    "filtered paginated founder audit visibility",
     "operational incident capture and resolution",
     "founder report resolution and user suspension",
     "block enforcement",
