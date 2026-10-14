@@ -5,7 +5,7 @@
 - `User`: login identity, UIUC email, password hash, verification/account-lifecycle status, admin role, throttled last-active timestamp and versioned 18+/policy consent timestamps.
 - `EmailVerificationToken`: hash-only email verification tokens.
 - `PasswordResetToken`: hash-only, single-use account recovery tokens with a one-hour expiry.
-- `RefreshToken`: hash-only, rotating session tokens with expiry and revocation.
+- `RefreshToken`: hash-only, rotating session tokens grouped into families for replay containment, with expiry and explicit revocation reasons.
 - `Profile`: dating and campus profile.
 - `ProfilePrompt`: up to three ordered answers selected from the reviewed prompt catalog.
 - `Photo`: ordered, sanitized profile-photo metadata and its published storage key.

@@ -94,6 +94,14 @@ enum NotificationType {
   MUTUAL_RALLY_AGAIN
 }
 
+enum RefreshTokenRevocationReason {
+  ROTATED
+  LOGOUT
+  PASSWORD_RESET
+  ACCOUNT_CHANGE
+  REUSE_DETECTED
+}
+
 model User {
   id           String     @id @default(cuid())
   email        String     @unique
@@ -145,16 +153,19 @@ model EmailVerificationToken {
 }
 
 model RefreshToken {
-  id        String    @id @default(cuid())
-  userId    String
-  tokenHash String    @unique
-  expiresAt DateTime
-  revokedAt DateTime?
-  createdAt DateTime  @default(now())
+  id            String                        @id @default(cuid())
+  userId        String
+  familyId      String
+  tokenHash     String                        @unique
+  expiresAt     DateTime
+  revokedAt     DateTime?
+  revokedReason RefreshTokenRevocationReason?
+  createdAt     DateTime                      @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, expiresAt])
+  @@index([familyId, revokedAt])
 }
 
 model PasswordResetToken {

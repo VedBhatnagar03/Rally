@@ -248,7 +248,7 @@ export async function meRoutes(app: FastifyInstance) {
       }),
       prisma.refreshToken.updateMany({
         where: { userId: user.id, revokedAt: null },
-        data: { revokedAt: new Date() }
+        data: { revokedAt: new Date(), revokedReason: "ACCOUNT_CHANGE" }
       })
     ]);
     await writeAuditLog({
