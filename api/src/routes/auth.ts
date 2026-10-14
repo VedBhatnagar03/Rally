@@ -22,11 +22,13 @@ export async function authRoutes(app: FastifyInstance) {
   async function issueSession(user: { id: string; email: string; role: "USER" | "ADMIN" }) {
     const accessToken = app.jwt.sign({ sub: user.id, email: user.email, role: user.role });
     const refreshToken = createOpaqueToken();
+    const familyId = crypto.randomUUID();
 
     await prisma.$transaction([
       prisma.refreshToken.create({
         data: {
           userId: user.id,
+          familyId,
           tokenHash: hashToken(refreshToken),
           expiresAt: new Date(Date.now() + env.REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000)
         }
@@ -289,7 +291,7 @@ export async function authRoutes(app: FastifyInstance) {
         });
         await tx.refreshToken.updateMany({
           where: { userId: resetToken.user.id, revokedAt: null },
-          data: { revokedAt: new Date() }
+          data: { revokedAt: new Date(), revokedReason: "PASSWORD_RESET" }
         });
         return true;
       });
@@ -314,7 +316,27 @@ export async function authRoutes(app: FastifyInstance) {
       include: { user: { select: { id: true, email: true, role: true, status: true } } }
     });
 
-    if (!current || current.revokedAt || current.expiresAt <= new Date() || current.user.status !== "ACTIVE") {
+    if (!current || current.user.status !== "ACTIVE") {
+      return reply.code(401).send({ error: "Invalid or expired refresh token" });
+    }
+
+    if (current.revokedAt) {
+      if (current.revokedReason === "ROTATED") {
+        await prisma.refreshToken.updateMany({
+          where: { familyId: current.familyId, revokedAt: null },
+          data: { revokedAt: new Date(), revokedReason: "REUSE_DETECTED" }
+        });
+        await writeAuditLog({
+          userId: current.user.id,
+          action: "auth.refresh_reuse_detected",
+          metadata: { familyId: current.familyId },
+          request
+        });
+      }
+      return reply.code(401).send({ error: "Invalid or expired refresh token" });
+    }
+
+    if (current.expiresAt <= new Date()) {
       return reply.code(401).send({ error: "Invalid or expired refresh token" });
     }
 
@@ -322,7 +344,7 @@ export async function authRoutes(app: FastifyInstance) {
     const rotated = await prisma.$transaction(async (tx) => {
       const revoked = await tx.refreshToken.updateMany({
         where: { id: current.id, revokedAt: null },
-        data: { revokedAt: new Date() }
+        data: { revokedAt: new Date(), revokedReason: "ROTATED" }
       });
 
       if (revoked.count !== 1) return false;
@@ -330,6 +352,7 @@ export async function authRoutes(app: FastifyInstance) {
       await tx.refreshToken.create({
         data: {
           userId: current.userId,
+          familyId: current.familyId,
           tokenHash: hashToken(nextRefreshToken),
           expiresAt: new Date(Date.now() + env.REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000)
         }
@@ -338,6 +361,16 @@ export async function authRoutes(app: FastifyInstance) {
     });
 
     if (!rotated) {
+      await prisma.refreshToken.updateMany({
+        where: { familyId: current.familyId, revokedAt: null },
+        data: { revokedAt: new Date(), revokedReason: "REUSE_DETECTED" }
+      });
+      await writeAuditLog({
+        userId: current.user.id,
+        action: "auth.refresh_reuse_detected",
+        metadata: { familyId: current.familyId },
+        request
+      });
       return reply.code(401).send({ error: "Invalid or expired refresh token" });
     }
 
@@ -368,7 +401,7 @@ export async function authRoutes(app: FastifyInstance) {
     if (session && !session.revokedAt) {
       await prisma.refreshToken.update({
         where: { id: session.id },
-        data: { revokedAt: new Date() }
+        data: { revokedAt: new Date(), revokedReason: "LOGOUT" }
       });
       await writeAuditLog({ userId: session.userId, action: "auth.logout", request });
     }

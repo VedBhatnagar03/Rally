@@ -205,7 +205,7 @@ export async function adminRoutes(app: FastifyInstance) {
       }),
       prisma.refreshToken.updateMany({
         where: { userId, revokedAt: null },
-        data: { revokedAt: new Date() }
+        data: { revokedAt: new Date(), revokedReason: "ACCOUNT_CHANGE" }
       })
     ]);
 

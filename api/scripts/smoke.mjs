@@ -240,6 +240,11 @@ const replayedRefresh = await post("/v1/auth/refresh", {
 });
 assertStatus("reject refresh replay", replayedRefresh.status, 401);
 
+const compromisedDescendant = await post("/v1/auth/refresh", {
+  refreshToken: refreshedAdmin.body.refreshToken
+});
+assertStatus("revoke refresh family after replay", compromisedDescendant.status, 401);
+
 const logout = await post("/v1/auth/logout", {
   refreshToken: refreshedAdmin.body.refreshToken
 });
@@ -1023,6 +1028,7 @@ console.log(JSON.stringify({
     "non-UIUC rejection",
     "verification resend and superseded-token rejection",
     "refresh rotation and replay rejection",
+    "refresh-token family replay containment",
     "logout revocation",
     "single-use password recovery and session revocation",
     "admin authorization",
