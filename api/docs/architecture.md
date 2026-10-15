@@ -18,6 +18,7 @@ Rally does not scrape or automate Active Illini. The backend suggests the best s
 - Audit: security-relevant event trail.
 - Founder operations: protected user/Rally inspection, report resolution and account suspension.
 - Founder metrics: configurable funnel windows, completed Rallies per active user and stalled-operation counts.
+- Founder audit visibility: admin-only, filtered and cursor-paginated access to security-relevant backend events.
 - Error visibility: unexpected request failures are logged and persisted as sanitized, admin-only incidents.
 - Account safety: password-confirmed deactivation/deletion, session revocation and user-controlled unblock.
 - Rally integrity: one active Rally per user pair, bounded future scheduling windows and immediate cancellation after a block.

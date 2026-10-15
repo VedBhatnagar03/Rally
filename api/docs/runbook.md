@@ -99,6 +99,11 @@ Run `/ready`, migration status, and the smoke suite against the restored environ
 3. Correlate the request ID with restricted server logs. Do not paste private logs into public issues.
 4. Contain the problem: suspend affected accounts, pause traffic, or roll back the application when necessary.
 5. Resolve the incident through `PATCH /v1/admin/incidents/:incidentId/resolve` with a concise remediation note.
+
+Use `GET /v1/admin/audit-logs` to inspect security-relevant activity. Filter by exact `action` or
+`actorUserId`, and follow `nextCursor` for older records. Treat IP addresses, user-agent strings and
+audit metadata as private operational data; access them only for a specific support, moderation or
+security purpose.
 6. Rotate any secret that may have been exposed and document the decision timeline.
 
 Authentication failures remain intentionally generic. Audit logs and safety records must be retained according to the beta privacy policy and exported before destructive database recovery.

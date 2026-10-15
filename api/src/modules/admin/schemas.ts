@@ -13,6 +13,12 @@ export const incidentListQuerySchema = adminListQuerySchema.extend({
   status: z.enum(["OPEN", "RESOLVED", "ALL"]).default("OPEN")
 });
 
+export const auditLogListQuerySchema = adminListQuerySchema.extend({
+  cursor: z.string().cuid().optional(),
+  actorUserId: z.string().cuid().optional(),
+  action: z.string().trim().min(1).max(120).optional()
+});
+
 export const resolveIncidentSchema = z.object({
   resolutionNote: z.string().trim().min(3).max(1200)
 });
