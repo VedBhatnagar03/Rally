@@ -3,7 +3,10 @@ import { prisma } from "../db/prisma.js";
 import { type AnalyticsEventInput, analyticsEventSchema } from "../modules/analytics/schemas.js";
 
 export async function analyticsRoutes(app: FastifyInstance) {
-  app.post("/events", { preHandler: app.authenticate }, async (request, reply) => {
+  app.post("/events", {
+    preHandler: app.authenticate,
+    config: { rateLimit: { max: 30, timeWindow: "1 minute" } }
+  }, async (request, reply) => {
     const body = analyticsEventSchema.parse(request.body) as AnalyticsEventInput;
     const event = await prisma.analyticsEvent.create({
       data: {

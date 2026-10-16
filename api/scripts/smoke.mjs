@@ -262,6 +262,29 @@ const deleting = await createVerifiedUser("deleting");
 const schedulerA = await createVerifiedUser("schedulerA");
 const schedulerB = await createVerifiedUser("schedulerB");
 
+const analyticsEvent = await post(
+  "/v1/analytics/events",
+  { name: "DISCOVERY_VIEWED", metadata: { candidateCount: 4 } },
+  normal.token
+);
+assertStatus("record catalog analytics event", analyticsEvent.status, 201);
+if (
+  analyticsEvent.body.event.name !== "DISCOVERY_VIEWED" ||
+  analyticsEvent.body.event.userId !== normal.user.id
+) {
+  throw new Error("record catalog analytics event: expected authenticated ownership");
+}
+
+const unsafeAnalyticsEvent = await post(
+  "/v1/analytics/events",
+  {
+    name: "DISCOVERY_VIEWED",
+    metadata: { candidateCount: 4, email: "private@illinois.edu" }
+  },
+  normal.token
+);
+assertStatus("reject unsafe analytics metadata", unsafeAnalyticsEvent.status, 400);
+
 const unknownRecovery = await post("/v1/auth/forgot-password", {
   email: `missing.${Date.now()}@illinois.edu`
 });
@@ -1052,6 +1075,7 @@ console.log(JSON.stringify({
     "ready",
     "versioned 18+ policy consent",
     "non-UIUC rejection",
+    "privacy-safe catalog analytics ingestion",
     "verification resend and superseded-token rejection",
     "refresh rotation and replay rejection",
     "refresh-token family replay containment",
