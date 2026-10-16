@@ -10,6 +10,7 @@ import {
   updateUserStatusSchema
 } from "../modules/admin/schemas.js";
 import { buildFunnelRates, perActiveUser } from "../modules/admin/metrics.js";
+import { presentReport } from "../modules/safety/presentation.js";
 import { writeAuditLog } from "../utils/audit.js";
 
 export async function adminRoutes(app: FastifyInstance) {
@@ -245,7 +246,7 @@ export async function adminRoutes(app: FastifyInstance) {
       orderBy: { createdAt: "desc" },
       take: limit
     });
-    return { reports };
+    return { reports: reports.map(presentReport) };
   });
 
   app.get("/incidents", { preHandler: app.authorizeAdmin }, async (request) => {
@@ -347,6 +348,6 @@ export async function adminRoutes(app: FastifyInstance) {
       metadata: { reportId, status: body.status },
       request
     });
-    return { report };
+    return { report: presentReport(report) };
   });
 }

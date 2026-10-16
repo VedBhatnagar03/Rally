@@ -368,6 +368,7 @@ model Block {
 
 model Report {
   id             String         @id @default(cuid())
+  dedupeKey      String?        @unique
   reporterId     String
   reportedUserId String
   rallyId        String?

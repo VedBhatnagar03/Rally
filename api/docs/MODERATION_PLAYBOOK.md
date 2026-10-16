@@ -18,6 +18,11 @@ Status: internal founder-review draft. This is an operating guide, not legal adv
 4. Do not contact the reported person with the reporter's private narrative or reveal a private Rally Again answer.
 5. If the report describes immediate danger, direct the reporter to 911 or appropriate campus/public-safety resources. Rally cannot dispatch help.
 
+Exact manual-report retries within the same UTC day are deduplicated. Each account may create up
+to five distinct manual reports in a rolling 24-hour window; negative post-Rally safety checks use
+their own confidential escalation path and are not blocked by this manual-report limit. A user who
+reaches the limit should use the monitored Rally support channel for additional help.
+
 ## Triage
 
 ### Critical
