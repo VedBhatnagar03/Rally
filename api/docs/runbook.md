@@ -30,6 +30,19 @@ npm run smoke
 
 GitHub Actions runs both paths for every backend pull request. It applies all migrations to a clean PostgreSQL 16 database, starts the compiled server, waits for readiness, and runs the smoke suite.
 
+## Expired Artifact Cleanup
+
+Run the compiled maintenance command at least hourly as a single scheduled job:
+
+```bash
+npm run cleanup:expired
+```
+
+The job removes expired email-verification, password-reset and refresh-token rows. It also deletes
+expired private staging-upload objects before removing their `PhotoUpload` rows. Published profile
+photos are never targeted. Storage failures leave the database row intact for the next retry and
+make the command exit unsuccessfully so operations can alert on incomplete cleanup.
+
 ## Health Checks
 
 - `GET /health`: the process is alive.
