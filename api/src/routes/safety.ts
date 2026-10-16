@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/prisma.js";
 import {
@@ -5,6 +6,12 @@ import {
   blockUserSchema,
   reportUserSchema
 } from "../modules/safety/schemas.js";
+import {
+  manualReportLimit,
+  manualReportWindowMs,
+  reportDedupeKey
+} from "../modules/safety/report-integrity.js";
+import { presentReport } from "../modules/safety/presentation.js";
 import { writeAuditLog } from "../utils/audit.js";
 
 export async function safetyRoutes(app: FastifyInstance) {
@@ -121,7 +128,10 @@ export async function safetyRoutes(app: FastifyInstance) {
     return reply.code(204).send();
   });
 
-  app.post("/reports", { preHandler: app.authenticate }, async (request, reply) => {
+  app.post("/reports", {
+    preHandler: app.authenticate,
+    config: { rateLimit: { max: 10, timeWindow: "1 hour" } }
+  }, async (request, reply) => {
     const body = reportUserSchema.parse(request.body);
 
     if (body.reportedUserId === request.user.sub) {
@@ -152,23 +162,74 @@ export async function safetyRoutes(app: FastifyInstance) {
       }
     }
 
-    const report = await prisma.report.create({
-      data: {
-        reporterId: request.user.sub,
-        reportedUserId: body.reportedUserId,
-        rallyId: body.rallyId,
-        category: body.category,
-        details: body.details
+    const now = new Date();
+    const dedupeKey = reportDedupeKey({ reporterId: request.user.sub, ...body, now });
+    let result:
+      | { report: Awaited<ReturnType<typeof prisma.report.create>>; created: boolean }
+      | { rateLimited: true }
+      | undefined;
+
+    for (let attempt = 0; attempt < 3 && !result; attempt += 1) {
+      try {
+        result = await prisma.$transaction(
+          async (tx) => {
+            const existing = await tx.report.findUnique({ where: { dedupeKey } });
+            if (existing) return { report: existing, created: false };
+
+            const recentReports = await tx.report.count({
+              where: {
+                reporterId: request.user.sub,
+                sourceFeedbackId: null,
+                createdAt: { gte: new Date(now.getTime() - manualReportWindowMs) }
+              }
+            });
+            if (recentReports >= manualReportLimit) return { rateLimited: true as const };
+
+            const report = await tx.report.create({
+              data: {
+                dedupeKey,
+                reporterId: request.user.sub,
+                reportedUserId: body.reportedUserId,
+                rallyId: body.rallyId,
+                category: body.category,
+                details: body.details
+              }
+            });
+            return { report, created: true };
+          },
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+        );
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+          const existing = await prisma.report.findUnique({ where: { dedupeKey } });
+          if (existing) result = { report: existing, created: false };
+          else throw error;
+        } else if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {
+          if (attempt < 2) continue;
+          break;
+        } else {
+          throw error;
+        }
       }
-    });
+    }
 
-    await writeAuditLog({
-      userId: request.user.sub,
-      action: "safety.report_user",
-      metadata: { reportedUserId: body.reportedUserId, category: body.category },
-      request
-    });
+    if (!result) return reply.code(503).send({ error: "Report submission is temporarily unavailable" });
+    if ("rateLimited" in result) {
+      return reply.code(429).send({ error: "Report limit reached; contact Rally support for help" });
+    }
 
-    return reply.code(201).send({ report });
+    if (result.created) {
+      await writeAuditLog({
+        userId: request.user.sub,
+        action: "safety.report_user",
+        metadata: { reportedUserId: body.reportedUserId, category: body.category },
+        request
+      });
+    }
+
+    return reply.code(result.created ? 201 : 200).send({
+      report: presentReport(result.report),
+      deduplicated: !result.created
+    });
   });
 }

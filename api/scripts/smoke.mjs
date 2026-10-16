@@ -513,6 +513,48 @@ const report = await post(
   normal.token
 );
 assertStatus("create moderation report", report.status, 201);
+if ("dedupeKey" in report.body.report) {
+  throw new Error("create moderation report: leaked internal deduplication key");
+}
+
+const duplicateReport = await post(
+  "/v1/safety/reports",
+  {
+    reportedUserId: other.user.id,
+    rallyId: rallyCancelledByBlock.body.rally.id,
+    category: "UNSAFE_BEHAVIOR",
+    details: "Smoke test moderation report"
+  },
+  normal.token
+);
+assertStatus("deduplicate moderation report retry", duplicateReport.status, 200);
+if (!duplicateReport.body.deduplicated || duplicateReport.body.report.id !== report.body.report.id) {
+  throw new Error("deduplicate moderation report retry: expected the original report");
+}
+
+for (let index = 1; index < 5; index += 1) {
+  const distinctReport = await post(
+    "/v1/safety/reports",
+    {
+      reportedUserId: other.user.id,
+      category: "OTHER",
+      details: `Distinct smoke test moderation concern number ${index}`
+    },
+    normal.token
+  );
+  assertStatus("create distinct moderation report within quota", distinctReport.status, 201);
+}
+
+const overReportQuota = await post(
+  "/v1/safety/reports",
+  {
+    reportedUserId: other.user.id,
+    category: "OTHER",
+    details: "Distinct smoke test moderation concern beyond the daily quota"
+  },
+  normal.token
+);
+assertStatus("enforce manual report quota", overReportQuota.status, 429);
 
 const unrelatedReport = await post(
   "/v1/safety/reports",
@@ -528,6 +570,9 @@ assertStatus("reject unrelated rally report", unrelatedReport.status, 400);
 
 const adminReports = await get("/v1/admin/reports?limit=10", adminLogin.body.token);
 assertStatus("admin report queue", adminReports.status, 200);
+if (adminReports.body.reports.some((entry) => "dedupeKey" in entry)) {
+  throw new Error("admin report queue: leaked internal deduplication key");
+}
 
 const resolvedReport = await request(`/v1/admin/reports/${report.body.report.id}`, {
   method: "PATCH",
@@ -1087,6 +1132,7 @@ console.log(JSON.stringify({
     "filtered paginated founder audit visibility",
     "operational incident capture and resolution",
     "founder report resolution and user suspension",
+    "idempotent quota-protected manual reports",
     "block enforcement",
     "block cancellation and report relationship integrity",
     "privacy-safe participant-authorized Rally reads",
