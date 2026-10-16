@@ -44,10 +44,16 @@ GitHub Actions runs both paths for every backend pull request. It applies all mi
 - `JWT_SECRET`: independently generated secret of at least 32 characters.
 - `CORS_ORIGIN`: exact HTTPS frontend origin; use a comma-separated allowlist only when required.
 - `PUBLIC_APP_URL`: exact HTTPS frontend origin used in email links.
+- `TRUST_PROXY_HOPS`: exact number of trusted reverse-proxy hops in front of the API. This must be at least `1` in production so client IP rate limits and audit records use the proxy-verified address. Confirm the value with the hosting provider; do not use an unbounded trust setting.
 - `PHOTO_STORAGE_*`: S3-compatible private staging and public profile-photo buckets, credentials, endpoint and public asset base URL. Keep the staging bucket private and allow reads only from the published bucket.
 - `RESEND_API_KEY` and a verified `EMAIL_FROM` sender.
 - `ADMIN_EMAILS`: smallest possible founder/admin allowlist.
 - `DEV_TOOLS_ENABLED=false`.
+
+Production startup rejects insecure frontend origins, the example JWT secret or Resend sender,
+an empty/non-UIUC admin allowlist, enabled development tools, missing photo/email credentials,
+and an unset trusted-proxy boundary. Validate the final environment by starting the immutable
+image before shifting traffic; do not weaken these checks to make a deployment boot.
 
 Store secrets in the hosting provider's secret manager. Never place production values in an image, repository, build log, or committed `.env` file.
 

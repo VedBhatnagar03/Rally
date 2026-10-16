@@ -27,6 +27,10 @@ import { describeOperationalIncident } from "./utils/operational-incident.js";
 
 export function buildApp() {
   const app = Fastify({
+    trustProxy:
+      env.TRUST_PROXY_HOPS > 0
+        ? (_address, hop) => hop < env.TRUST_PROXY_HOPS
+        : false,
     logger: {
       level: env.LOG_LEVEL,
       redact: ["req.headers.authorization", "password", "passwordHash"]
