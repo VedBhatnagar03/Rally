@@ -25,6 +25,7 @@ Must ship:
 - Cancelled Rallies retain confirmed reservation details until the booking owner completes the external cancellation.
 - Feedback, safety check, Rally Again, block, report.
 - Negative post-Rally safety checks are confidentially escalated to the founder moderation queue.
+- Reports immediately remove the pair from discovery and future coordination, and cancel any active Rally between them.
 - Founder console for users, Rallies, reports, and funnel counts.
 
 Explicit exclusions:

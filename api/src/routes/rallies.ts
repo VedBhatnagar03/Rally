@@ -97,16 +97,27 @@ export async function rallyRoutes(app: FastifyInstance) {
       return reply.code(404).send({ error: "Receiver not found" });
     }
 
-    const block = await prisma.block.findFirst({
-      where: {
-        OR: [
-          { blockerId: request.user.sub, blockedId: body.receiverId },
-          { blockerId: body.receiverId, blockedId: request.user.sub }
-        ]
-      }
-    });
+    const [block, report] = await Promise.all([
+      prisma.block.findFirst({
+        where: {
+          OR: [
+            { blockerId: request.user.sub, blockedId: body.receiverId },
+            { blockerId: body.receiverId, blockedId: request.user.sub }
+          ]
+        }
+      }),
+      prisma.report.findFirst({
+        where: {
+          OR: [
+            { reporterId: request.user.sub, reportedUserId: body.receiverId },
+            { reporterId: body.receiverId, reportedUserId: request.user.sub }
+          ]
+        },
+        select: { id: true }
+      })
+    ]);
 
-    if (block) {
+    if (block || report) {
       return reply.code(403).send({ error: "Rally unavailable" });
     }
 
@@ -185,7 +196,7 @@ export async function rallyRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "You cannot schedule a Rally with yourself" });
     }
 
-    const [currentUser, receiver, venues, block] = await Promise.all([
+    const [currentUser, receiver, venues, block, report] = await Promise.all([
       prisma.user.findUnique({
         where: { id: request.user.sub },
         include: { sportProfiles: true, availability: true }
@@ -202,6 +213,15 @@ export async function rallyRoutes(app: FastifyInstance) {
             { blockerId: params.receiverId, blockedId: request.user.sub }
           ]
         }
+      }),
+      prisma.report.findFirst({
+        where: {
+          OR: [
+            { reporterId: request.user.sub, reportedUserId: params.receiverId },
+            { reporterId: params.receiverId, reportedUserId: request.user.sub }
+          ]
+        },
+        select: { id: true }
       })
     ]);
 
@@ -209,7 +229,7 @@ export async function rallyRoutes(app: FastifyInstance) {
       return reply.code(404).send({ error: "Receiver not found" });
     }
 
-    if (block) {
+    if (block || report) {
       return reply.code(403).send({ error: "Rally unavailable" });
     }
 

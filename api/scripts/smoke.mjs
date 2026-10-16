@@ -360,6 +360,69 @@ if (
 
 await completeProfile(normal, "Normal User", [{ dayOfWeek: 2, startTime: "17:00", endTime: "20:00" }]);
 await completeProfile(other, "Other User", [{ dayOfWeek: 2, startTime: "18:00", endTime: "21:00" }]);
+await completeProfile(deactivating, "Deactivating User", [{ dayOfWeek: 2, startTime: "17:00", endTime: "20:00" }]);
+await completeProfile(deleting, "Deleting User", [{ dayOfWeek: 2, startTime: "18:00", endTime: "21:00" }]);
+
+const rallyCancelledByReport = await post(
+  "/v1/rallies",
+  {
+    receiverId: deleting.user.id,
+    sport: "TENNIS",
+    proposedStartAt: new Date(Date.now() + 86_400_000).toISOString(),
+    proposedEndAt: new Date(Date.now() + 90_000_000).toISOString()
+  },
+  deactivating.token
+);
+assertStatus("create rally before report", rallyCancelledByReport.status, 201);
+
+const exclusionReport = await post(
+  "/v1/safety/reports",
+  {
+    reportedUserId: deleting.user.id,
+    rallyId: rallyCancelledByReport.body.rally.id,
+    category: "UNSAFE_BEHAVIOR",
+    details: "Smoke test report interaction exclusion"
+  },
+  deactivating.token
+);
+assertStatus("create interaction-excluding report", exclusionReport.status, 201);
+
+const reportedRally = await get(
+  `/v1/rallies/${rallyCancelledByReport.body.rally.id}`,
+  deactivating.token
+);
+assertStatus("read rally cancelled by report", reportedRally.status, 200);
+if (reportedRally.body.rally.status !== "CANCELLED") {
+  throw new Error("report interaction exclusion: expected active Rally cancellation");
+}
+
+const reportedRecommendations = await get("/v1/recommendations", deactivating.token);
+assertStatus("discovery after report", reportedRecommendations.status, 200);
+if (
+  reportedRecommendations.body.recommendations.some(
+    (recommendation) => recommendation.userId === deleting.user.id
+  )
+) {
+  throw new Error("report interaction exclusion: reported pair remained in discovery");
+}
+
+const reportedSuggestions = await get(
+  `/v1/rallies/suggestions/${deleting.user.id}`,
+  deactivating.token
+);
+assertStatus("reject scheduling after report", reportedSuggestions.status, 403);
+
+const rallyAfterReport = await post(
+  "/v1/rallies",
+  {
+    receiverId: deleting.user.id,
+    sport: "TENNIS",
+    proposedStartAt: new Date(Date.now() + 172_800_000).toISOString(),
+    proposedEndAt: new Date(Date.now() + 176_400_000).toISOString()
+  },
+  deactivating.token
+);
+assertStatus("reject new Rally after report", rallyAfterReport.status, 403);
 
 const firstPhoto = await uploadProfilePhoto(normal);
 const secondPhoto = await uploadProfilePhoto(normal);
@@ -1018,7 +1081,7 @@ if (unreadAfterReadAll.body.unreadCount !== 0 || unreadAfterReadAll.body.notific
 const cancellable = await post(
   "/v1/rallies",
   {
-    receiverId: schedulerB.user.id,
+    receiverId: normal.user.id,
     sport: "TENNIS",
     proposedStartAt: new Date(Date.now() + 172_800_000).toISOString(),
     proposedEndAt: new Date(Date.now() + 176_400_000).toISOString()
@@ -1030,7 +1093,7 @@ assertStatus("create cancellable rally", cancellable.status, 201);
 const acceptedCancellable = await post(
   `/v1/rallies/${cancellable.body.rally.id}/respond`,
   { status: "ACCEPTED" },
-  schedulerB.token
+  normal.token
 );
 assertStatus("accept cancellable rally", acceptedCancellable.status, 200);
 
@@ -1050,7 +1113,7 @@ assertStatus("book cancellable rally", bookedCancellable.status, 200);
 
 const cancelAttempts = await Promise.all([
   post(`/v1/rallies/${cancellable.body.rally.id}/cancel`, { reason: "Plans changed" }, schedulerA.token),
-  post(`/v1/rallies/${cancellable.body.rally.id}/cancel`, { reason: "Plans changed" }, schedulerB.token)
+  post(`/v1/rallies/${cancellable.body.rally.id}/cancel`, { reason: "Plans changed" }, normal.token)
 ]);
 const cancelStatuses = cancelAttempts.map(({ status }) => status).sort();
 if (cancelStatuses[0] !== 200 || cancelStatuses[1] !== 409) {
@@ -1059,7 +1122,7 @@ if (cancelStatuses[0] !== 200 || cancelStatuses[1] !== 409) {
 const cancelled = cancelAttempts.find(({ status }) => status === 200);
 if (
   cancelled.body.rally.status !== "CANCELLED" ||
-  ![schedulerA.user.id, schedulerB.user.id].includes(cancelled.body.rally.cancelledById) ||
+  ![schedulerA.user.id, normal.user.id].includes(cancelled.body.rally.cancelledById) ||
   cancelled.body.rally.cancellationReason !== "Plans changed" ||
   cancelled.body.rally.courtStatus !== "BOOKED" ||
   cancelled.body.rally.bookingOwnerId !== schedulerA.user.id ||
@@ -1070,7 +1133,7 @@ if (
 }
 
 const cancellationRecipient = cancelled.body.rally.cancelledById === schedulerA.user.id
-  ? schedulerB
+  ? normal
   : schedulerA;
 const cancellationNotifications = await get("/v1/notifications", cancellationRecipient.token);
 const cancellationCount = cancellationNotifications.body.notifications.filter(
@@ -1107,7 +1170,7 @@ assertStatus("reject another participant's Rally cursor", foreignHistoryCursor.s
 const acceptCancelled = await post(
   `/v1/rallies/${cancellable.body.rally.id}/respond`,
   { status: "ACCEPTED" },
-  schedulerB.token
+  normal.token
 );
 assertStatus("reject cancelled rally transition", acceptCancelled.status, 409);
 
@@ -1133,6 +1196,7 @@ console.log(JSON.stringify({
     "operational incident capture and resolution",
     "founder report resolution and user suspension",
     "idempotent quota-protected manual reports",
+    "report-based interaction exclusion",
     "block enforcement",
     "block cancellation and report relationship integrity",
     "privacy-safe participant-authorized Rally reads",

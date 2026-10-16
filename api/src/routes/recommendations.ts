@@ -26,6 +26,12 @@ export async function recommendationRoutes(app: FastifyInstance) {
         blocksCreated: {
           none: { blockedId: currentUser.id }
         },
+        reportsReceived: {
+          none: { reporterId: currentUser.id }
+        },
+        reportsCreated: {
+          none: { reportedUserId: currentUser.id }
+        },
         sentRallies: {
           none: {
             receiverId: currentUser.id,

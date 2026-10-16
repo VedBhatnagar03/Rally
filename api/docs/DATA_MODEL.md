@@ -30,6 +30,7 @@
 - Reports are admin/moderation data only.
 - Blocks affect recommendations immediately and cancel active Rallies between the users.
 - Rally-linked reports must name the other participant in a Rally the reporter actually joined.
+- A report in either direction excludes the pair from discovery and future Rally creation, and the first report cancels any active Rally between them while preserving confirmed booking ownership details.
 - Account deletion anonymizes identity and removes profile data while retaining safety and shared Rally records.
 - Venue data is campus-area level, not precise residence or live location.
 - Operational incidents never store request bodies, authorization headers or stack traces.
