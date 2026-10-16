@@ -18,7 +18,7 @@
 - `Notification`: durable, per-user Rally lifecycle events with read state and duplicate prevention.
 - `Block`: immediate discovery and interaction exclusion.
 - `Report`: safety/moderation queue with status, resolution note, timestamp and resolving administrator.
-- `AnalyticsEvent`: funnel and behavior instrumentation.
+- `AnalyticsEvent`: authenticated, allowlisted product-interaction instrumentation with strict metadata. Rally lifecycle conversions remain authoritative from domain tables.
 - `AuditLog`: security-relevant backend events.
 - `OperationalIncident`: sanitized unexpected-error records for founder diagnosis and resolution.
 

@@ -130,3 +130,5 @@ In development, `POST /v1/auth/register` returns a `devVerificationToken` so the
 Profile photos use private presigned uploads. The API decodes, rotates, bounds, strips metadata from, and converts each image to WebP before publishing it. The local Compose stack provides S3-compatible storage through VersityGW; run `npm run storage:init` after first startup. Production may use any S3-compatible provider with the photo-storage environment variables.
 
 Onboarding supports up to three answers from the reviewed prompt catalog and up to twelve short interests. Recommendations return the candidate's public discovery profile while withholding email, exact availability, and dating-filter preferences.
+
+Analytics ingestion uses the strict beta catalog in `docs/ANALYTICS.md`; arbitrary names and free-form metadata are rejected.
