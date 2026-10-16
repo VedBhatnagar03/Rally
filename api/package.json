@@ -17,7 +17,8 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "seed": "tsx prisma/seed.ts",
-    "storage:init": "tsx scripts/init-photo-storage.ts"
+    "storage:init": "tsx scripts/init-photo-storage.ts",
+    "cleanup:expired": "node dist/maintenance/cleanup-expired.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1150.0",
