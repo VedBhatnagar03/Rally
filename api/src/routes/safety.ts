@@ -6,6 +6,7 @@ import {
   blockUserSchema,
   reportUserSchema
 } from "../modules/safety/schemas.js";
+import { safetyCancellationData } from "../modules/safety/cancellation.js";
 import {
   manualReportLimit,
   manualReportWindowMs,
@@ -52,12 +53,7 @@ export async function safetyRoutes(app: FastifyInstance) {
         { senderId: body.blockedUserId, receiverId: request.user.sub }
       ]
     };
-    const cancellation = {
-      status: "CANCELLED" as const,
-      cancelledAt: now,
-      cancelledById: request.user.sub,
-      cancellationReason: "Cancelled after a participant blocked the other user"
-    };
+    const cancellation = safetyCancellationData(now);
     const [block] = await prisma.$transaction([
       prisma.block.upsert({
         where: {
@@ -201,12 +197,7 @@ export async function safetyRoutes(app: FastifyInstance) {
                 { senderId: body.reportedUserId, receiverId: request.user.sub }
               ]
             };
-            const cancellation = {
-              status: "CANCELLED" as const,
-              cancelledAt: now,
-              cancelledById: request.user.sub,
-              cancellationReason: "Cancelled after a participant submitted a safety report"
-            };
+            const cancellation = safetyCancellationData(now);
             await tx.rally.updateMany({
               where: {
                 status: { in: ["PENDING", "ACCEPTED", "SCHEDULED"] },

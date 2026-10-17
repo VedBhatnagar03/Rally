@@ -29,7 +29,7 @@ Rally does not allow:
 
 ## Safety Tools
 
-Users may cancel any Rally, block another user, and submit a private report. Blocking immediately removes the pair from discovery and cancels any active Rally between them. Reports go to the founder/admin and are not shown to the reported person as user-authored content.
+Users may cancel any Rally, block another user, and submit a private report. Blocking immediately removes the pair from discovery and cancels any active Rally between them. Reports go to the founder/admin and are not shown to the reported person as user-authored content. Cancellations caused by either safety action use a neutral notice that does not identify the action or the person who took it.
 
 Rally Again answers stay private unless both participants choose yes. A mutual result is not consent to contact, a relationship, or any activity beyond the Rally.
 
