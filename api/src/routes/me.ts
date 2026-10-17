@@ -1,5 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/prisma.js";
+import {
+  runSerializableTransaction,
+  SerializableTransactionExhaustedError
+} from "../db/serializable.js";
 import { upsertProfileSchema } from "../modules/profile/schemas.js";
 import { deactivateAccountSchema, deleteAccountSchema } from "../modules/account/schemas.js";
 import { verifyPassword, hashPassword } from "../utils/password.js";
@@ -8,6 +12,7 @@ import { writeAuditLog } from "../utils/audit.js";
 import { policyConsentSchema } from "../modules/policies/schemas.js";
 import { env } from "../config/env.js";
 import { deletePhotoObject, deletePhotoUploadObject } from "../modules/profile/photo-storage.js";
+import { cancelActiveRalliesForUnavailableUser } from "../modules/safety/cancellation.js";
 
 export async function meRoutes(app: FastifyInstance) {
   app.get("/", { preHandler: app.authenticate }, async (request) => {
@@ -241,16 +246,25 @@ export async function meRoutes(app: FastifyInstance) {
       return reply.code(401).send({ error: "Invalid password" });
     }
 
-    await prisma.$transaction([
-      prisma.user.update({
-        where: { id: user.id },
-        data: { status: "DEACTIVATED", deactivatedAt: new Date() }
-      }),
-      prisma.refreshToken.updateMany({
-        where: { userId: user.id, revokedAt: null },
-        data: { revokedAt: new Date(), revokedReason: "ACCOUNT_CHANGE" }
-      })
-    ]);
+    const deactivatedAt = new Date();
+    try {
+      await runSerializableTransaction(async (tx) => {
+        await tx.user.update({
+          where: { id: user.id },
+          data: { status: "DEACTIVATED", deactivatedAt }
+        });
+        await tx.refreshToken.updateMany({
+          where: { userId: user.id, revokedAt: null },
+          data: { revokedAt: deactivatedAt, revokedReason: "ACCOUNT_CHANGE" }
+        });
+        await cancelActiveRalliesForUnavailableUser(tx, user.id, deactivatedAt);
+      });
+    } catch (error) {
+      if (error instanceof SerializableTransactionExhaustedError) {
+        return reply.code(503).send({ error: "Account deactivation is temporarily unavailable" });
+      }
+      throw error;
+    }
     await writeAuditLog({
       userId: user.id,
       action: "account.deactivate",
@@ -291,33 +305,43 @@ export async function meRoutes(app: FastifyInstance) {
       request.log.error({ err: error }, "Could not clean up account photo storage");
       return reply.code(503).send({ error: "Account deletion is temporarily unavailable" });
     }
-    await prisma.$transaction([
-      prisma.profile.deleteMany({ where: { userId: user.id } }),
-      prisma.sportProfile.deleteMany({ where: { userId: user.id } }),
-      prisma.availabilityWindow.deleteMany({ where: { userId: user.id } }),
-      prisma.photo.deleteMany({ where: { userId: user.id } }),
-      prisma.photoUpload.deleteMany({ where: { userId: user.id } }),
-      prisma.emailVerificationToken.deleteMany({ where: { userId: user.id } }),
-      prisma.passwordResetToken.deleteMany({ where: { userId: user.id } }),
-      prisma.refreshToken.deleteMany({ where: { userId: user.id } }),
-      prisma.analyticsEvent.deleteMany({ where: { userId: user.id } }),
-      prisma.notification.deleteMany({ where: { userId: user.id } }),
-      prisma.block.deleteMany({
-        where: { OR: [{ blockerId: user.id }, { blockedId: user.id }] }
-      }),
-      prisma.rallyFeedback.updateMany({ where: { userId: user.id }, data: { notes: null } }),
-      prisma.user.update({
-        where: { id: user.id },
-        data: {
-          email: `deleted+${user.id}@deleted.invalid`,
-          passwordHash: unusablePasswordHash,
-          status: "DELETED",
-          role: "USER",
-          deletedAt,
-          deactivatedAt: deletedAt
-        }
-      })
-    ]);
+    try {
+      await runSerializableTransaction(async (tx) => {
+        await cancelActiveRalliesForUnavailableUser(tx, user.id, deletedAt);
+        await Promise.all([
+          tx.profile.deleteMany({ where: { userId: user.id } }),
+          tx.sportProfile.deleteMany({ where: { userId: user.id } }),
+          tx.availabilityWindow.deleteMany({ where: { userId: user.id } }),
+          tx.photo.deleteMany({ where: { userId: user.id } }),
+          tx.photoUpload.deleteMany({ where: { userId: user.id } }),
+          tx.emailVerificationToken.deleteMany({ where: { userId: user.id } }),
+          tx.passwordResetToken.deleteMany({ where: { userId: user.id } }),
+          tx.refreshToken.deleteMany({ where: { userId: user.id } }),
+          tx.analyticsEvent.deleteMany({ where: { userId: user.id } }),
+          tx.notification.deleteMany({ where: { userId: user.id } }),
+          tx.block.deleteMany({
+            where: { OR: [{ blockerId: user.id }, { blockedId: user.id }] }
+          }),
+          tx.rallyFeedback.updateMany({ where: { userId: user.id }, data: { notes: null } }),
+          tx.user.update({
+            where: { id: user.id },
+            data: {
+              email: `deleted+${user.id}@deleted.invalid`,
+              passwordHash: unusablePasswordHash,
+              status: "DELETED",
+              role: "USER",
+              deletedAt,
+              deactivatedAt: deletedAt
+            }
+          })
+        ]);
+      });
+    } catch (error) {
+      if (error instanceof SerializableTransactionExhaustedError) {
+        return reply.code(503).send({ error: "Account deletion is temporarily unavailable" });
+      }
+      throw error;
+    }
 
     await writeAuditLog({ userId: user.id, action: "account.delete", request });
     return reply.code(204).send();

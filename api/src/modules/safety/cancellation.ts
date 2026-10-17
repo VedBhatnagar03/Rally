@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import type { CourtBookingStatus, Prisma } from "@prisma/client";
 import { courtDataAfterCancellation } from "../rallies/booking-integrity.js";
 
 export const safetyCancellationReason = "This Rally is no longer available";
@@ -26,23 +26,16 @@ export function safetyCancellationNotificationData(rally: {
   }));
 }
 
-export async function cancelActiveRalliesForSafetyAction(
+async function cancelRallies(
   tx: Prisma.TransactionClient,
-  firstUserId: string,
-  secondUserId: string,
+  rallies: Array<{
+    id: string;
+    senderId: string;
+    receiverId: string;
+    courtStatus: CourtBookingStatus;
+  }>,
   now: Date
 ) {
-  const rallies = await tx.rally.findMany({
-    where: {
-      status: { in: [...activeRallyStatuses] },
-      OR: [
-        { senderId: firstUserId, receiverId: secondUserId },
-        { senderId: secondUserId, receiverId: firstUserId }
-      ]
-    },
-    select: { id: true, senderId: true, receiverId: true, courtStatus: true }
-  });
-
   let cancelledCount = 0;
   for (const rally of rallies) {
     const cancelled = await tx.rally.updateMany({
@@ -66,4 +59,40 @@ export async function cancelActiveRalliesForSafetyAction(
   }
 
   return cancelledCount;
+}
+
+export async function cancelActiveRalliesForSafetyAction(
+  tx: Prisma.TransactionClient,
+  firstUserId: string,
+  secondUserId: string,
+  now: Date
+) {
+  const rallies = await tx.rally.findMany({
+    where: {
+      status: { in: [...activeRallyStatuses] },
+      OR: [
+        { senderId: firstUserId, receiverId: secondUserId },
+        { senderId: secondUserId, receiverId: firstUserId }
+      ]
+    },
+    select: { id: true, senderId: true, receiverId: true, courtStatus: true }
+  });
+
+  return cancelRallies(tx, rallies, now);
+}
+
+export async function cancelActiveRalliesForUnavailableUser(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  now: Date
+) {
+  const rallies = await tx.rally.findMany({
+    where: {
+      status: { in: [...activeRallyStatuses] },
+      OR: [{ senderId: userId }, { receiverId: userId }]
+    },
+    select: { id: true, senderId: true, receiverId: true, courtStatus: true }
+  });
+
+  return cancelRallies(tx, rallies, now);
 }

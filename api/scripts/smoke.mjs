@@ -35,6 +35,28 @@ async function get(path, token) {
   });
 }
 
+async function assertNeutralCancellation(name, rallyId, participant) {
+  const rally = await smokePrisma.rally.findUniqueOrThrow({ where: { id: rallyId } });
+  if (
+    rally.status !== "CANCELLED" ||
+    rally.cancelledById !== null ||
+    rally.cancellationReason !== "This Rally is no longer available"
+  ) {
+    throw new Error(`${name}: expected a neutral system cancellation`);
+  }
+
+  const notificationCount = await smokePrisma.notification.count({
+    where: {
+      userId: participant.user.id,
+      rallyId,
+      type: "RALLY_CANCELLED"
+    }
+  });
+  if (notificationCount !== 1) {
+    throw new Error(`${name}: expected one cancellation notification for the active participant`);
+  }
+}
+
 async function patch(path, body, token) {
   return request(path, {
     method: "PATCH",
@@ -722,12 +744,36 @@ if (!resolvedReport.body.report.resolvedAt || !resolvedReport.body.report.resolv
   throw new Error("resolve moderation report: expected resolution attribution");
 }
 
+const rallyCancelledBySuspension = await post(
+  "/v1/rallies",
+  {
+    receiverId: schedulerB.user.id,
+    sport: "TENNIS",
+    proposedStartAt: new Date(Date.now() + 86_400_000).toISOString(),
+    proposedEndAt: new Date(Date.now() + 90_000_000).toISOString()
+  },
+  schedulerA.token
+);
+assertStatus("create Rally before suspension", rallyCancelledBySuspension.status, 201);
+
 const suspended = await request(`/v1/admin/users/${other.user.id}/status`, {
   method: "PATCH",
   headers: { authorization: `Bearer ${adminLogin.body.token}` },
   body: JSON.stringify({ status: "SUSPENDED", reason: "Smoke test suspension" })
 });
 assertStatus("suspend user", suspended.status, 200);
+
+const suspendedScheduler = await request(`/v1/admin/users/${schedulerB.user.id}/status`, {
+  method: "PATCH",
+  headers: { authorization: `Bearer ${adminLogin.body.token}` },
+  body: JSON.stringify({ status: "SUSPENDED", reason: "Active Rally suspension test" })
+});
+assertStatus("suspend user with active Rally", suspendedScheduler.status, 200);
+await assertNeutralCancellation(
+  "account suspension",
+  rallyCancelledBySuspension.body.rally.id,
+  schedulerA
+);
 
 const suspendedAccess = await get("/v1/me", other.token);
 assertStatus("suspended access rejection", suspendedAccess.status, 401);
@@ -738,6 +784,13 @@ const reactivated = await request(`/v1/admin/users/${other.user.id}/status`, {
   body: JSON.stringify({ status: "ACTIVE", reason: "Smoke test complete" })
 });
 assertStatus("reactivate user", reactivated.status, 200);
+
+const reactivatedScheduler = await request(`/v1/admin/users/${schedulerB.user.id}/status`, {
+  method: "PATCH",
+  headers: { authorization: `Bearer ${adminLogin.body.token}` },
+  body: JSON.stringify({ status: "ACTIVE", reason: "Active Rally suspension test complete" })
+});
+assertStatus("reactivate user after Rally cancellation", reactivatedScheduler.status, 200);
 
 const normalAuditLogs = await get("/v1/admin/audit-logs", normal.token);
 assertStatus("normal audit log rejection", normalAuditLogs.status, 403);
@@ -765,6 +818,18 @@ if (olderAuditLogPage.body.auditLogs.length !== 1) {
   throw new Error("admin audit log pagination: expected an older matching event");
 }
 
+const rallyCancelledByDeactivation = await post(
+  "/v1/rallies",
+  {
+    receiverId: raceB.user.id,
+    sport: "TENNIS",
+    proposedStartAt: new Date(Date.now() + 86_400_000).toISOString(),
+    proposedEndAt: new Date(Date.now() + 90_000_000).toISOString()
+  },
+  deactivating.token
+);
+assertStatus("create Rally before deactivation", rallyCancelledByDeactivation.status, 201);
+
 const deactivated = await post(
   "/v1/me/deactivate",
   { password, reason: "Smoke test deactivation" },
@@ -777,8 +842,24 @@ assertStatus(
   (await post("/v1/auth/refresh", { refreshToken: deactivating.refreshToken })).status,
   401
 );
+await assertNeutralCancellation(
+  "account deactivation",
+  rallyCancelledByDeactivation.body.rally.id,
+  raceB
+);
 
 const deletingPhoto = await uploadProfilePhoto(deleting);
+const rallyCancelledByDeletion = await post(
+  "/v1/rallies",
+  {
+    receiverId: raceB.user.id,
+    sport: "TENNIS",
+    proposedStartAt: new Date(Date.now() + 172_800_000).toISOString(),
+    proposedEndAt: new Date(Date.now() + 176_400_000).toISOString()
+  },
+  deleting.token
+);
+assertStatus("create Rally before deletion", rallyCancelledByDeletion.status, 201);
 const deleted = await request("/v1/me", {
   method: "DELETE",
   headers: { authorization: `Bearer ${deleting.token}` },
@@ -791,6 +872,11 @@ assertStatus(
   "deleted login rejection",
   (await post("/v1/auth/login", { email: deleting.user.email, password })).status,
   401
+);
+await assertNeutralCancellation(
+  "account deletion",
+  rallyCancelledByDeletion.body.rally.id,
+  raceB
 );
 
 const adminUsers = await get("/v1/admin/users?limit=100", adminLogin.body.token);
@@ -1278,6 +1364,7 @@ console.log(JSON.stringify({
     "privacy-safe participant-authorized Rally reads",
     "bounded participant-scoped Rally history",
     "account deactivation, deletion, and unblock",
+    "atomic active-Rally cancellation on account unavailability",
     "privacy-safe account data export",
     "sanitized profile photo upload and ownership",
     "mutual filters and explainable recommendations",

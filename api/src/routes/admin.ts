@@ -1,6 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/prisma.js";
 import {
+  runSerializableTransaction,
+  SerializableTransactionExhaustedError
+} from "../db/serializable.js";
+import {
   adminListQuerySchema,
   adminSummaryQuerySchema,
   auditLogListQuerySchema,
@@ -11,6 +15,7 @@ import {
 } from "../modules/admin/schemas.js";
 import { buildFunnelRates, perActiveUser } from "../modules/admin/metrics.js";
 import { presentReport } from "../modules/safety/presentation.js";
+import { cancelActiveRalliesForUnavailableUser } from "../modules/safety/cancellation.js";
 import { writeAuditLog } from "../utils/audit.js";
 
 export async function adminRoutes(app: FastifyInstance) {
@@ -199,17 +204,30 @@ export async function adminRoutes(app: FastifyInstance) {
       return reply.code(409).send({ error: "Deleted accounts cannot be reactivated" });
     }
 
-    const [user] = await prisma.$transaction([
-      prisma.user.update({
-        where: { id: userId },
-        data: { status: body.status },
-        select: { id: true, email: true, status: true, role: true, updatedAt: true }
-      }),
-      prisma.refreshToken.updateMany({
-        where: { userId, revokedAt: null },
-        data: { revokedAt: new Date(), revokedReason: "ACCOUNT_CHANGE" }
-      })
-    ]);
+    const now = new Date();
+    let user;
+    try {
+      user = await runSerializableTransaction(async (tx) => {
+        const updated = await tx.user.update({
+          where: { id: userId },
+          data: { status: body.status },
+          select: { id: true, email: true, status: true, role: true, updatedAt: true }
+        });
+        await tx.refreshToken.updateMany({
+          where: { userId, revokedAt: null },
+          data: { revokedAt: now, revokedReason: "ACCOUNT_CHANGE" }
+        });
+        if (body.status === "SUSPENDED") {
+          await cancelActiveRalliesForUnavailableUser(tx, userId, now);
+        }
+        return updated;
+      });
+    } catch (error) {
+      if (error instanceof SerializableTransactionExhaustedError) {
+        return reply.code(503).send({ error: "Account status update is temporarily unavailable" });
+      }
+      throw error;
+    }
 
     await writeAuditLog({
       userId: request.user.sub,

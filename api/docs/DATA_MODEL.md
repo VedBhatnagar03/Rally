@@ -34,6 +34,7 @@
 - Rally-linked reports must name the other participant in a Rally the reporter actually joined.
 - A report in either direction excludes the pair from discovery and future Rally creation, and the first report cancels any active Rally between them while preserving confirmed booking ownership details.
 - Account deletion anonymizes identity and removes profile data while retaining safety and shared Rally records.
+- Suspension, deactivation and deletion neutrally cancel active Rallies and notify the remaining participant without exposing the account-state reason.
 - Venue data is campus-area level, not precise residence or live location.
 - Operational incidents never store request bodies, authorization headers or stack traces.
 - User exports include only the requester's account data and shared Rally records; secrets and reports submitted by other users are excluded.

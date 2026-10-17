@@ -138,10 +138,9 @@ export async function rallyRoutes(app: FastifyInstance) {
             { senderId: body.receiverId, receiverId: request.user.sub }
           ]
         };
-        const [activeReceiver, block, report, existingRally] = await Promise.all([
-          tx.user.findFirst({
-            where: { id: body.receiverId, status: "ACTIVE" },
-            select: { id: true }
+        const [activeParticipantCount, block, report, existingRally] = await Promise.all([
+          tx.user.count({
+            where: { id: { in: [request.user.sub, body.receiverId] }, status: "ACTIVE" }
           }),
           tx.block.findFirst({
             where: {
@@ -167,7 +166,9 @@ export async function rallyRoutes(app: FastifyInstance) {
           })
         ]);
 
-        if (!activeReceiver || block || report) return { outcome: "UNAVAILABLE" as const };
+        if (activeParticipantCount !== 2 || block || report) {
+          return { outcome: "UNAVAILABLE" as const };
+        }
         if (existingRally) return { outcome: "DUPLICATE" as const };
 
         const created = await tx.rally.create({
