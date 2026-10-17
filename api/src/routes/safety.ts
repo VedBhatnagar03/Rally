@@ -195,6 +195,40 @@ export async function safetyRoutes(app: FastifyInstance) {
                 details: body.details
               }
             });
+            const pair = {
+              OR: [
+                { senderId: request.user.sub, receiverId: body.reportedUserId },
+                { senderId: body.reportedUserId, receiverId: request.user.sub }
+              ]
+            };
+            const cancellation = {
+              status: "CANCELLED" as const,
+              cancelledAt: now,
+              cancelledById: request.user.sub,
+              cancellationReason: "Cancelled after a participant submitted a safety report"
+            };
+            await tx.rally.updateMany({
+              where: {
+                status: { in: ["PENDING", "ACCEPTED", "SCHEDULED"] },
+                courtStatus: "BOOKED",
+                ...pair
+              },
+              data: cancellation
+            });
+            await tx.rally.updateMany({
+              where: {
+                status: { in: ["PENDING", "ACCEPTED", "SCHEDULED"] },
+                courtStatus: { not: "BOOKED" },
+                ...pair
+              },
+              data: {
+                ...cancellation,
+                courtStatus: "NOT_STARTED",
+                courtNumber: null,
+                bookingReference: null,
+                bookingOwnerId: null
+              }
+            });
             return { report, created: true };
           },
           { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
