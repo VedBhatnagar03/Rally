@@ -261,6 +261,8 @@ const deactivating = await createVerifiedUser("deactivating");
 const deleting = await createVerifiedUser("deleting");
 const schedulerA = await createVerifiedUser("schedulerA");
 const schedulerB = await createVerifiedUser("schedulerB");
+const raceA = await createVerifiedUser("raceA");
+const raceB = await createVerifiedUser("raceB");
 
 const analyticsEvent = await post(
   "/v1/analytics/events",
@@ -362,6 +364,42 @@ await completeProfile(normal, "Normal User", [{ dayOfWeek: 2, startTime: "17:00"
 await completeProfile(other, "Other User", [{ dayOfWeek: 2, startTime: "18:00", endTime: "21:00" }]);
 await completeProfile(deactivating, "Deactivating User", [{ dayOfWeek: 2, startTime: "17:00", endTime: "20:00" }]);
 await completeProfile(deleting, "Deleting User", [{ dayOfWeek: 2, startTime: "18:00", endTime: "21:00" }]);
+await completeProfile(raceA, "Race A", [{ dayOfWeek: 2, startTime: "17:00", endTime: "20:00" }]);
+await completeProfile(raceB, "Race B", [{ dayOfWeek: 2, startTime: "18:00", endTime: "21:00" }]);
+
+const [racedRally, racedBlock] = await Promise.all([
+  post(
+    "/v1/rallies",
+    {
+      receiverId: raceB.user.id,
+      sport: "TENNIS",
+      proposedStartAt: new Date(Date.now() + 86_400_000).toISOString(),
+      proposedEndAt: new Date(Date.now() + 90_000_000).toISOString()
+    },
+    raceA.token
+  ),
+  post(
+    "/v1/safety/blocks",
+    { blockedUserId: raceB.user.id, reason: "concurrent safety boundary test" },
+    raceA.token
+  )
+]);
+if (![201, 403].includes(racedRally.status)) {
+  throw new Error(`concurrent Rally/block: expected Rally status 201 or 403, got ${racedRally.status}`);
+}
+assertStatus("concurrent Rally/block safety action", racedBlock.status, 201);
+const racedRallies = await get("/v1/rallies", raceA.token);
+assertStatus("read concurrent Rally/block result", racedRallies.status, 200);
+if (
+  racedRallies.body.rallies.some(
+    (entry) =>
+      [entry.senderId, entry.receiverId].includes(raceA.user.id) &&
+      [entry.senderId, entry.receiverId].includes(raceB.user.id) &&
+      ["PENDING", "ACCEPTED", "SCHEDULED"].includes(entry.status)
+  )
+) {
+  throw new Error("concurrent Rally/block: active Rally survived the safety action");
+}
 
 const rallyCancelledByReport = await post(
   "/v1/rallies",
@@ -1236,6 +1274,7 @@ console.log(JSON.stringify({
     "report-based interaction exclusion",
     "block enforcement",
     "atomic privacy-safe safety cancellations and notifications",
+    "serializable Rally creation and safety-action race containment",
     "privacy-safe participant-authorized Rally reads",
     "bounded participant-scoped Rally history",
     "account deactivation, deletion, and unblock",

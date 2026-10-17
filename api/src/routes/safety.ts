@@ -2,6 +2,10 @@ import { Prisma } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/prisma.js";
 import {
+  runSerializableTransaction,
+  SerializableTransactionExhaustedError
+} from "../db/serializable.js";
+import {
   blockedUserParamsSchema,
   blockUserSchema,
   reportUserSchema
@@ -47,31 +51,39 @@ export async function safetyRoutes(app: FastifyInstance) {
     }
 
     const now = new Date();
-    const block = await prisma.$transaction(async (tx) => {
-      const created = await tx.block.upsert({
-        where: {
-          blockerId_blockedId: {
+    let block;
+    try {
+      block = await runSerializableTransaction(async (tx) => {
+        const created = await tx.block.upsert({
+          where: {
+            blockerId_blockedId: {
+              blockerId: request.user.sub,
+              blockedId: body.blockedUserId
+            }
+          },
+          create: {
             blockerId: request.user.sub,
-            blockedId: body.blockedUserId
+            blockedId: body.blockedUserId,
+            reason: body.reason
+          },
+          update: {
+            reason: body.reason
           }
-        },
-        create: {
-          blockerId: request.user.sub,
-          blockedId: body.blockedUserId,
-          reason: body.reason
-        },
-        update: {
-          reason: body.reason
-        }
+        });
+        await cancelActiveRalliesForSafetyAction(
+          tx,
+          request.user.sub,
+          body.blockedUserId,
+          now
+        );
+        return created;
       });
-      await cancelActiveRalliesForSafetyAction(
-        tx,
-        request.user.sub,
-        body.blockedUserId,
-        now
-      );
-      return created;
-    });
+    } catch (error) {
+      if (error instanceof SerializableTransactionExhaustedError) {
+        return reply.code(503).send({ error: "Block is temporarily unavailable" });
+      }
+      throw error;
+    }
 
     await writeAuditLog({
       userId: request.user.sub,

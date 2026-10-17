@@ -2,6 +2,10 @@ import { Prisma } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/prisma.js";
 import {
+  runSerializableTransaction,
+  SerializableTransactionExhaustedError
+} from "../db/serializable.js";
+import {
   cancelRallySchema,
   courtBookingSchema,
   createRallySchema,
@@ -97,30 +101,6 @@ export async function rallyRoutes(app: FastifyInstance) {
       return reply.code(404).send({ error: "Receiver not found" });
     }
 
-    const [block, report] = await Promise.all([
-      prisma.block.findFirst({
-        where: {
-          OR: [
-            { blockerId: request.user.sub, blockedId: body.receiverId },
-            { blockerId: body.receiverId, blockedId: request.user.sub }
-          ]
-        }
-      }),
-      prisma.report.findFirst({
-        where: {
-          OR: [
-            { reporterId: request.user.sub, reportedUserId: body.receiverId },
-            { reporterId: body.receiverId, reportedUserId: request.user.sub }
-          ]
-        },
-        select: { id: true }
-      })
-    ]);
-
-    if (block || report) {
-      return reply.code(403).send({ error: "Rally unavailable" });
-    }
-
     if (
       !sender?.profile ||
       !receiver.profile ||
@@ -146,23 +126,50 @@ export async function rallyRoutes(app: FastifyInstance) {
       return reply.code(403).send({ error: "Rally unavailable" });
     }
 
-    const existingRally = await prisma.rally.findFirst({
-      where: {
-        status: { in: [...activeRallyStatuses] },
-        OR: [
-          { senderId: request.user.sub, receiverId: body.receiverId },
-          { senderId: body.receiverId, receiverId: request.user.sub }
-        ]
-      },
-      select: { id: true }
-    });
-    if (existingRally) {
-      return reply.code(409).send({ error: "An active Rally already exists between these users" });
-    }
-
-    let rally;
+    let creation:
+      | { outcome: "CREATED"; rally: Awaited<ReturnType<typeof prisma.rally.create>> }
+      | { outcome: "UNAVAILABLE" }
+      | { outcome: "DUPLICATE" };
     try {
-      rally = await prisma.$transaction(async (tx) => {
+      creation = await runSerializableTransaction(async (tx) => {
+        const pair = {
+          OR: [
+            { senderId: request.user.sub, receiverId: body.receiverId },
+            { senderId: body.receiverId, receiverId: request.user.sub }
+          ]
+        };
+        const [activeReceiver, block, report, existingRally] = await Promise.all([
+          tx.user.findFirst({
+            where: { id: body.receiverId, status: "ACTIVE" },
+            select: { id: true }
+          }),
+          tx.block.findFirst({
+            where: {
+              OR: [
+                { blockerId: request.user.sub, blockedId: body.receiverId },
+                { blockerId: body.receiverId, blockedId: request.user.sub }
+              ]
+            },
+            select: { id: true }
+          }),
+          tx.report.findFirst({
+            where: {
+              OR: [
+                { reporterId: request.user.sub, reportedUserId: body.receiverId },
+                { reporterId: body.receiverId, reportedUserId: request.user.sub }
+              ]
+            },
+            select: { id: true }
+          }),
+          tx.rally.findFirst({
+            where: { status: { in: [...activeRallyStatuses] }, ...pair },
+            select: { id: true }
+          })
+        ]);
+
+        if (!activeReceiver || block || report) return { outcome: "UNAVAILABLE" as const };
+        if (existingRally) return { outcome: "DUPLICATE" as const };
+
         const created = await tx.rally.create({
           data: {
             senderId: request.user.sub,
@@ -177,16 +184,25 @@ export async function rallyRoutes(app: FastifyInstance) {
         await tx.notification.create({
           data: { userId: body.receiverId, type: "RALLY_RECEIVED", rallyId: created.id }
         });
-        return created;
+        return { outcome: "CREATED" as const, rally: created };
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
         return reply.code(409).send({ error: "An active Rally already exists between these users" });
       }
+      if (error instanceof SerializableTransactionExhaustedError) {
+        return reply.code(503).send({ error: "Rally creation is temporarily unavailable" });
+      }
       throw error;
     }
 
-    return reply.code(201).send({ rally });
+    if (creation.outcome === "UNAVAILABLE") {
+      return reply.code(403).send({ error: "Rally unavailable" });
+    }
+    if (creation.outcome === "DUPLICATE") {
+      return reply.code(409).send({ error: "An active Rally already exists between these users" });
+    }
+    return reply.code(201).send({ rally: creation.rally });
   });
 
   app.get("/suggestions/:receiverId", { preHandler: app.authenticate }, async (request, reply) => {
