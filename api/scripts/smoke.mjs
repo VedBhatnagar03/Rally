@@ -399,6 +399,20 @@ if (
 ) {
   throw new Error("report interaction exclusion: expected a privacy-safe active Rally cancellation");
 }
+const reportCancellationNotifications = await Promise.all([
+  get("/v1/notifications", deactivating.token),
+  get("/v1/notifications", deleting.token)
+]);
+for (const notifications of reportCancellationNotifications) {
+  const matching = notifications.body.notifications.filter(
+    (notification) =>
+      notification.rallyId === rallyCancelledByReport.body.rally.id &&
+      notification.type === "RALLY_CANCELLED"
+  );
+  if (matching.length !== 1 || matching[0].rally.status !== "CANCELLED") {
+    throw new Error("report interaction exclusion: expected one neutral cancellation notification per participant");
+  }
+}
 
 const reportedRecommendations = await get("/v1/recommendations", deactivating.token);
 assertStatus("discovery after report", reportedRecommendations.status, 200);
@@ -546,6 +560,20 @@ if (
   blockedPairRally.cancellationReason !== "This Rally is no longer available"
 ) {
   throw new Error("block user: expected a privacy-safe active Rally cancellation");
+}
+const blockCancellationNotifications = await Promise.all([
+  get("/v1/notifications", normal.token),
+  get("/v1/notifications", other.token)
+]);
+for (const notifications of blockCancellationNotifications) {
+  const matching = notifications.body.notifications.filter(
+    (notification) =>
+      notification.rallyId === rallyCancelledByBlock.body.rally.id &&
+      notification.type === "RALLY_CANCELLED"
+  );
+  if (matching.length !== 1 || matching[0].rally.status !== "CANCELLED") {
+    throw new Error("block user: expected one neutral cancellation notification per participant");
+  }
 }
 const rallyReadPayload = JSON.stringify(blockedPairRally);
 for (const privateField of [
@@ -1207,7 +1235,7 @@ console.log(JSON.stringify({
     "idempotent quota-protected manual reports",
     "report-based interaction exclusion",
     "block enforcement",
-    "privacy-safe safety cancellation and report relationship integrity",
+    "atomic privacy-safe safety cancellations and notifications",
     "privacy-safe participant-authorized Rally reads",
     "bounded participant-scoped Rally history",
     "account deactivation, deletion, and unblock",

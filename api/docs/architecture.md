@@ -30,7 +30,7 @@ Rally does not scrape or automate Active Illini. The backend suggests the best s
 - Rally history: participant-scoped cursors and capped page sizes keep nested history reads bounded as the beta grows.
 - Post-Rally safety: a negative safety response creates a confidential, idempotent founder-queue report linked to the feedback record.
 - Feedback integrity: the first post-Rally decision is final; exact retries succeed while conflicting resubmissions are rejected.
-- Notifications: durable in-app lifecycle events are created in the same transaction as Rally state changes and deduplicated per recipient, event type and Rally.
+- Notifications: durable in-app lifecycle events are created in the same transaction as Rally state changes and deduplicated per recipient, event type and Rally. Safety-triggered cancellations notify both participants with the same neutral event.
 - Profile photos: clients upload to a short-lived private S3-compatible target; the API validates and re-encodes images before publishing owner-bound assets.
 
 ## Request Flow

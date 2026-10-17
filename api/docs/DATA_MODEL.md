@@ -30,6 +30,7 @@
 - Reports are admin/moderation data only.
 - Blocks affect recommendations immediately and cancel active Rallies between the users.
 - Safety-triggered cancellations use neutral system attribution and never reveal whether a participant blocked or reported the other user.
+- Safety-triggered cancellation notifications are written atomically for both participants and contain no block/report attribution.
 - Rally-linked reports must name the other participant in a Rally the reporter actually joined.
 - A report in either direction excludes the pair from discovery and future Rally creation, and the first report cancels any active Rally between them while preserving confirmed booking ownership details.
 - Account deletion anonymizes identity and removes profile data while retaining safety and shared Rally records.
