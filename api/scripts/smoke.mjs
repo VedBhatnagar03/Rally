@@ -392,8 +392,12 @@ const reportedRally = await get(
   deactivating.token
 );
 assertStatus("read rally cancelled by report", reportedRally.status, 200);
-if (reportedRally.body.rally.status !== "CANCELLED") {
-  throw new Error("report interaction exclusion: expected active Rally cancellation");
+if (
+  reportedRally.body.rally.status !== "CANCELLED" ||
+  reportedRally.body.rally.cancelledById !== null ||
+  reportedRally.body.rally.cancellationReason !== "This Rally is no longer available"
+) {
+  throw new Error("report interaction exclusion: expected a privacy-safe active Rally cancellation");
 }
 
 const reportedRecommendations = await get("/v1/recommendations", deactivating.token);
@@ -535,8 +539,13 @@ assertStatus("list rallies after block", normalRallies.status, 200);
 const blockedPairRally = normalRallies.body.rallies.find(
   (entry) => entry.id === rallyCancelledByBlock.body.rally.id
 );
-if (!blockedPairRally || blockedPairRally.status !== "CANCELLED") {
-  throw new Error("block user: expected the active Rally to be cancelled");
+if (
+  !blockedPairRally ||
+  blockedPairRally.status !== "CANCELLED" ||
+  blockedPairRally.cancelledById !== null ||
+  blockedPairRally.cancellationReason !== "This Rally is no longer available"
+) {
+  throw new Error("block user: expected a privacy-safe active Rally cancellation");
 }
 const rallyReadPayload = JSON.stringify(blockedPairRally);
 for (const privateField of [
@@ -1198,7 +1207,7 @@ console.log(JSON.stringify({
     "idempotent quota-protected manual reports",
     "report-based interaction exclusion",
     "block enforcement",
-    "block cancellation and report relationship integrity",
+    "privacy-safe safety cancellation and report relationship integrity",
     "privacy-safe participant-authorized Rally reads",
     "bounded participant-scoped Rally history",
     "account deactivation, deletion, and unblock",
