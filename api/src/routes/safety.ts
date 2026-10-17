@@ -6,7 +6,7 @@ import {
   blockUserSchema,
   reportUserSchema
 } from "../modules/safety/schemas.js";
-import { safetyCancellationData } from "../modules/safety/cancellation.js";
+import { cancelActiveRalliesForSafetyAction } from "../modules/safety/cancellation.js";
 import {
   manualReportLimit,
   manualReportWindowMs,
@@ -47,15 +47,8 @@ export async function safetyRoutes(app: FastifyInstance) {
     }
 
     const now = new Date();
-    const pair = {
-      OR: [
-        { senderId: request.user.sub, receiverId: body.blockedUserId },
-        { senderId: body.blockedUserId, receiverId: request.user.sub }
-      ]
-    };
-    const cancellation = safetyCancellationData(now);
-    const [block] = await prisma.$transaction([
-      prisma.block.upsert({
+    const block = await prisma.$transaction(async (tx) => {
+      const created = await tx.block.upsert({
         where: {
           blockerId_blockedId: {
             blockerId: request.user.sub,
@@ -70,30 +63,15 @@ export async function safetyRoutes(app: FastifyInstance) {
         update: {
           reason: body.reason
         }
-      }),
-      prisma.rally.updateMany({
-        where: {
-          status: { in: ["PENDING", "ACCEPTED", "SCHEDULED"] },
-          courtStatus: "BOOKED",
-          ...pair
-        },
-        data: cancellation
-      }),
-      prisma.rally.updateMany({
-        where: {
-          status: { in: ["PENDING", "ACCEPTED", "SCHEDULED"] },
-          courtStatus: { not: "BOOKED" },
-          ...pair
-        },
-        data: {
-          ...cancellation,
-          courtStatus: "NOT_STARTED",
-          courtNumber: null,
-          bookingReference: null,
-          bookingOwnerId: null
-        }
-      })
-    ]);
+      });
+      await cancelActiveRalliesForSafetyAction(
+        tx,
+        request.user.sub,
+        body.blockedUserId,
+        now
+      );
+      return created;
+    });
 
     await writeAuditLog({
       userId: request.user.sub,
@@ -191,35 +169,12 @@ export async function safetyRoutes(app: FastifyInstance) {
                 details: body.details
               }
             });
-            const pair = {
-              OR: [
-                { senderId: request.user.sub, receiverId: body.reportedUserId },
-                { senderId: body.reportedUserId, receiverId: request.user.sub }
-              ]
-            };
-            const cancellation = safetyCancellationData(now);
-            await tx.rally.updateMany({
-              where: {
-                status: { in: ["PENDING", "ACCEPTED", "SCHEDULED"] },
-                courtStatus: "BOOKED",
-                ...pair
-              },
-              data: cancellation
-            });
-            await tx.rally.updateMany({
-              where: {
-                status: { in: ["PENDING", "ACCEPTED", "SCHEDULED"] },
-                courtStatus: { not: "BOOKED" },
-                ...pair
-              },
-              data: {
-                ...cancellation,
-                courtStatus: "NOT_STARTED",
-                courtNumber: null,
-                bookingReference: null,
-                bookingOwnerId: null
-              }
-            });
+            await cancelActiveRalliesForSafetyAction(
+              tx,
+              request.user.sub,
+              body.reportedUserId,
+              now
+            );
             return { report, created: true };
           },
           { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
