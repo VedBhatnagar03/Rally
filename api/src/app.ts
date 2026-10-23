@@ -7,6 +7,7 @@ import Fastify from "fastify";
 import { ZodError } from "zod";
 import { env } from "./config/env.js";
 import { prisma } from "./db/prisma.js";
+import { closeRedis, redis } from "./db/redis.js";
 import authenticate from "./plugins/authenticate.js";
 import { authRoutes } from "./routes/auth.js";
 import { adminRoutes } from "./routes/admin.js";
@@ -38,6 +39,16 @@ export function buildApp() {
     bodyLimit: 1_000_000,
     genReqId: () => crypto.randomUUID()
   });
+
+  let lastRedisErrorLogAt = 0;
+  const logRedisError = (error: Error) => {
+    const now = Date.now();
+    if (now - lastRedisErrorLogAt < 30_000) return;
+
+    lastRedisErrorLogAt = now;
+    app.log.warn({ error }, "Redis connection error");
+  };
+  redis?.on("error", logRedisError);
 
   app.setErrorHandler(async (error, request, reply) => {
     const statusCode =
@@ -86,7 +97,8 @@ export function buildApp() {
   });
   app.register(rateLimit, {
     max: 120,
-    timeWindow: "1 minute"
+    timeWindow: "1 minute",
+    ...(redis ? { redis } : {})
   });
   app.register(jwt, {
     secret: env.JWT_SECRET,
@@ -97,9 +109,27 @@ export function buildApp() {
   app.register(authenticate);
 
   app.get("/health", async () => ({ ok: true, service: "rally-backend" }));
-  app.get("/ready", async (_request, reply) => {
-    await prisma.$queryRaw`SELECT 1`;
-    return reply.code(200).send({ ok: true, dependencies: { database: "ok" } });
+  app.get("/ready", async (request, reply) => {
+    try {
+      await Promise.all([
+        prisma.$queryRaw`SELECT 1`,
+        redis ? redis.ping() : Promise.resolve()
+      ]);
+      return reply.code(200).send({
+        ok: true,
+        dependencies: {
+          database: "ok",
+          rateLimitStore: redis ? "ok" : "local"
+        }
+      });
+    } catch (error) {
+      request.log.warn({ error }, "Readiness dependency check failed");
+      return reply.code(503).send({ ok: false });
+    }
+  });
+  app.addHook("onClose", async () => {
+    redis?.off("error", logRedisError);
+    await closeRedis();
   });
   app.register(authRoutes, { prefix: "/v1/auth" });
   app.register(policyRoutes, { prefix: "/v1/policies" });

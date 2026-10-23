@@ -204,6 +204,12 @@ assertStatus("health", health.status, 200);
 
 const ready = await get("/ready");
 assertStatus("ready", ready.status, 200);
+if (
+  ready.body.dependencies?.database !== "ok" ||
+  ready.body.dependencies?.rateLimitStore !== "ok"
+) {
+  throw new Error("ready: expected PostgreSQL and Redis to be available");
+}
 
 const currentPolicy = await get("/v1/policies/current");
 assertStatus("current policy metadata", currentPolicy.status, 200);

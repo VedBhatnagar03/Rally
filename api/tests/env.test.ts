@@ -4,6 +4,7 @@ import { parseEnv } from "../src/config/env.js";
 const productionEnv = {
   NODE_ENV: "production",
   DATABASE_URL: "postgresql://rally:password@db.example.com:5432/rally",
+  REDIS_URL: "rediss://cache.example.com:6380",
   JWT_SECRET: "a-production-only-secret-that-is-long-enough",
   PUBLIC_APP_URL: "https://rally.example.com",
   RESEND_API_KEY: "re_production_key",
@@ -36,6 +37,8 @@ describe("environment validation", () => {
     ["insecure CORS origin", { CORS_ORIGIN: "http://rally.example.com" }],
     ["CORS origin with a path", { CORS_ORIGIN: "https://rally.example.com/app" }],
     ["missing trusted proxy boundary", { TRUST_PROXY_HOPS: "0" }],
+    ["missing shared rate-limit store", { REDIS_URL: "" }],
+    ["unencrypted rate-limit store", { REDIS_URL: "redis://cache.example.com:6379" }],
     ["example JWT secret", { JWT_SECRET: "replace-with-at-least-32-random-characters" }],
     ["example email sender", { EMAIL_FROM: "Rally <onboarding@resend.dev>" }]
   ])("rejects production with %s", (_name, override) => {
@@ -49,5 +52,6 @@ describe("environment validation", () => {
     });
     expect(parsed.NODE_ENV).toBe("development");
     expect(parsed.TRUST_PROXY_HOPS).toBe(0);
+    expect(parsed.REDIS_URL).toBeUndefined();
   });
 });
