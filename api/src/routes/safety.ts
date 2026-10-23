@@ -76,6 +76,12 @@ export async function safetyRoutes(app: FastifyInstance) {
           body.blockedUserId,
           now
         );
+        await writeAuditLog({
+          userId: request.user.sub,
+          action: "safety.block_user",
+          metadata: { blockedUserId: body.blockedUserId },
+          request
+        }, tx);
         return created;
       });
     } catch (error) {
@@ -85,32 +91,37 @@ export async function safetyRoutes(app: FastifyInstance) {
       throw error;
     }
 
-    await writeAuditLog({
-      userId: request.user.sub,
-      action: "safety.block_user",
-      metadata: { blockedUserId: body.blockedUserId },
-      request
-    });
-
     return reply.code(201).send({ block });
   });
 
   app.delete("/blocks/:blockedUserId", { preHandler: app.authenticate }, async (request, reply) => {
     const { blockedUserId } = blockedUserParamsSchema.parse(request.params);
-    const removed = await prisma.block.deleteMany({
-      where: { blockerId: request.user.sub, blockedId: blockedUserId }
-    });
+    let removed;
+    try {
+      removed = await runSerializableTransaction(async (tx) => {
+        const result = await tx.block.deleteMany({
+          where: { blockerId: request.user.sub, blockedId: blockedUserId }
+        });
+        if (result.count === 1) {
+          await writeAuditLog({
+            userId: request.user.sub,
+            action: "safety.unblock_user",
+            metadata: { blockedUserId },
+            request
+          }, tx);
+        }
+        return result;
+      });
+    } catch (error) {
+      if (error instanceof SerializableTransactionExhaustedError) {
+        return reply.code(503).send({ error: "Unblock is temporarily unavailable" });
+      }
+      throw error;
+    }
 
     if (removed.count === 0) {
       return reply.code(404).send({ error: "Block not found" });
     }
-
-    await writeAuditLog({
-      userId: request.user.sub,
-      action: "safety.unblock_user",
-      metadata: { blockedUserId },
-      request
-    });
     return reply.code(204).send();
   });
 
@@ -155,68 +166,59 @@ export async function safetyRoutes(app: FastifyInstance) {
       | { rateLimited: true }
       | undefined;
 
-    for (let attempt = 0; attempt < 3 && !result; attempt += 1) {
-      try {
-        result = await prisma.$transaction(
-          async (tx) => {
-            const existing = await tx.report.findUnique({ where: { dedupeKey } });
-            if (existing) return { report: existing, created: false };
+    try {
+      result = await runSerializableTransaction(async (tx) => {
+        const existing = await tx.report.findUnique({ where: { dedupeKey } });
+        if (existing) return { report: existing, created: false };
 
-            const recentReports = await tx.report.count({
-              where: {
-                reporterId: request.user.sub,
-                sourceFeedbackId: null,
-                createdAt: { gte: new Date(now.getTime() - manualReportWindowMs) }
-              }
-            });
-            if (recentReports >= manualReportLimit) return { rateLimited: true as const };
+        const recentReports = await tx.report.count({
+          where: {
+            reporterId: request.user.sub,
+            sourceFeedbackId: null,
+            createdAt: { gte: new Date(now.getTime() - manualReportWindowMs) }
+          }
+        });
+        if (recentReports >= manualReportLimit) return { rateLimited: true as const };
 
-            const report = await tx.report.create({
-              data: {
-                dedupeKey,
-                reporterId: request.user.sub,
-                reportedUserId: body.reportedUserId,
-                rallyId: body.rallyId,
-                category: body.category,
-                details: body.details
-              }
-            });
-            await cancelActiveRalliesForSafetyAction(
-              tx,
-              request.user.sub,
-              body.reportedUserId,
-              now
-            );
-            return { report, created: true };
-          },
-          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+        const report = await tx.report.create({
+          data: {
+            dedupeKey,
+            reporterId: request.user.sub,
+            reportedUserId: body.reportedUserId,
+            rallyId: body.rallyId,
+            category: body.category,
+            details: body.details
+          }
+        });
+        await cancelActiveRalliesForSafetyAction(
+          tx,
+          request.user.sub,
+          body.reportedUserId,
+          now
         );
-      } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-          const existing = await prisma.report.findUnique({ where: { dedupeKey } });
-          if (existing) result = { report: existing, created: false };
-          else throw error;
-        } else if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {
-          if (attempt < 2) continue;
-          break;
-        } else {
-          throw error;
-        }
+        await writeAuditLog({
+          userId: request.user.sub,
+          action: "safety.report_user",
+          metadata: { reportedUserId: body.reportedUserId, category: body.category },
+          request
+        }, tx);
+        return { report, created: true };
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        const existing = await prisma.report.findUnique({ where: { dedupeKey } });
+        if (existing) result = { report: existing, created: false };
+        else throw error;
+      } else if (error instanceof SerializableTransactionExhaustedError) {
+        result = undefined;
+      } else {
+        throw error;
       }
     }
 
     if (!result) return reply.code(503).send({ error: "Report submission is temporarily unavailable" });
     if ("rateLimited" in result) {
       return reply.code(429).send({ error: "Report limit reached; contact Rally support for help" });
-    }
-
-    if (result.created) {
-      await writeAuditLog({
-        userId: request.user.sub,
-        action: "safety.report_user",
-        metadata: { reportedUserId: body.reportedUserId, category: body.category },
-        request
-      });
     }
 
     return reply.code(result.created ? 201 : 200).send({

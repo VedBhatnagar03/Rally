@@ -607,6 +607,13 @@ const block = await post(
   normal.token
 );
 assertStatus("block user", block.status, 201);
+if (
+  await smokePrisma.auditLog.count({
+    where: { userId: normal.user.id, action: "safety.block_user" }
+  }) !== 1
+) {
+  throw new Error("block user: expected one atomic safety audit record");
+}
 
 const normalRallies = await get("/v1/rallies", normal.token);
 assertStatus("list rallies after block", normalRallies.status, 200);
@@ -690,6 +697,13 @@ const duplicateReport = await post(
 assertStatus("deduplicate moderation report retry", duplicateReport.status, 200);
 if (!duplicateReport.body.deduplicated || duplicateReport.body.report.id !== report.body.report.id) {
   throw new Error("deduplicate moderation report retry: expected the original report");
+}
+if (
+  await smokePrisma.auditLog.count({
+    where: { userId: normal.user.id, action: "safety.report_user" }
+  }) !== 1
+) {
+  throw new Error("deduplicate moderation report retry: expected one atomic safety audit record");
 }
 
 for (let index = 1; index < 5; index += 1) {
@@ -909,6 +923,13 @@ const unblocked = await request(`/v1/safety/blocks/${other.user.id}`, {
   headers: { authorization: `Bearer ${normal.token}` }
 });
 assertStatus("unblock user", unblocked.status, 204);
+if (
+  await smokePrisma.auditLog.count({
+    where: { userId: normal.user.id, action: "safety.unblock_user" }
+  }) !== 1
+) {
+  throw new Error("unblock user: expected one atomic safety audit record");
+}
 
 const suggestions = await get(`/v1/rallies/suggestions/${schedulerB.user.id}`, schedulerA.token);
 assertStatus("schedule suggestions", suggestions.status, 200);
@@ -1360,6 +1381,7 @@ console.log(JSON.stringify({
     "report-based interaction exclusion",
     "block enforcement",
     "atomic privacy-safe safety cancellations and notifications",
+    "atomic safety state and audit records",
     "serializable Rally creation and safety-action race containment",
     "privacy-safe participant-authorized Rally reads",
     "bounded participant-scoped Rally history",

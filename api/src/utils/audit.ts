@@ -9,8 +9,11 @@ type AuditInput = {
   request?: FastifyRequest;
 };
 
-export async function writeAuditLog({ userId, action, metadata, request }: AuditInput) {
-  await prisma.auditLog.create({
+export async function writeAuditLog(
+  { userId, action, metadata, request }: AuditInput,
+  tx?: Prisma.TransactionClient
+) {
+  await (tx ?? prisma).auditLog.create({
     data: {
       userId,
       action,
