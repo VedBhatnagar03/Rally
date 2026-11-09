@@ -35,6 +35,7 @@ export async function devRoutes(app: FastifyInstance) {
     const users = await prisma.user.findMany({
       where: {
         status: "ACTIVE",
+        isTestAccount: true,
         profile: { profileComplete: true }
       },
       include: profileInclude,
@@ -52,6 +53,7 @@ export async function devRoutes(app: FastifyInstance) {
       where: {
         id: userId,
         status: "ACTIVE",
+        isTestAccount: true,
         profile: { profileComplete: true }
       },
       include: profileInclude
@@ -76,6 +78,7 @@ export async function devRoutes(app: FastifyInstance) {
       where: {
         id: body.userId,
         status: "ACTIVE",
+        isTestAccount: true,
         profile: { profileComplete: true }
       },
       select: { id: true, email: true, role: true }

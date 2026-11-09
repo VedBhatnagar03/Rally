@@ -108,6 +108,7 @@ model User {
   passwordHash String
   status       UserStatus @default(PENDING_EMAIL_VERIFICATION)
   role         UserRole   @default(USER)
+  isTestAccount Boolean   @default(false)
   deactivatedAt DateTime?
   deletedAt     DateTime?
   lastActiveAt  DateTime?
@@ -137,6 +138,7 @@ model User {
   notifications           Notification[]
 
   @@index([lastActiveAt])
+  @@index([isTestAccount, status])
 }
 
 model EmailVerificationToken {

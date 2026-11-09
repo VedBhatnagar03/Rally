@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/prisma.js";
 import {
@@ -18,9 +19,43 @@ import { presentReport } from "../modules/safety/presentation.js";
 import { cancelActiveRalliesForUnavailableUser } from "../modules/safety/cancellation.js";
 import { writeAuditLog } from "../utils/audit.js";
 
+type DataScope = "REAL" | "TEST" | "ALL";
+
+function userScopeWhere(dataScope: DataScope): Prisma.UserWhereInput {
+  return {
+    role: "USER",
+    ...(dataScope === "ALL" ? {} : { isTestAccount: dataScope === "TEST" })
+  };
+}
+
+function rallyScopeWhere(dataScope: DataScope): Prisma.RallyWhereInput {
+  const accountScope = {
+    role: "USER" as const,
+    ...(dataScope === "ALL" ? {} : { isTestAccount: dataScope === "TEST" })
+  };
+  return {
+    sender: accountScope,
+    receiver: accountScope
+  };
+}
+
+function reportScopeWhere(dataScope: DataScope): Prisma.ReportWhereInput {
+  const accountScope = {
+    role: "USER" as const,
+    ...(dataScope === "ALL" ? {} : { isTestAccount: dataScope === "TEST" })
+  };
+  return {
+    reporter: accountScope,
+    reportedUser: accountScope
+  };
+}
+
 export async function adminRoutes(app: FastifyInstance) {
   app.get("/summary", { preHandler: app.authorizeAdmin }, async (request) => {
-    const { windowDays } = adminSummaryQuerySchema.parse(request.query);
+    const { dataScope, windowDays } = adminSummaryQuerySchema.parse(request.query);
+    const userScope = userScopeWhere(dataScope);
+    const rallyScope = rallyScopeWhere(dataScope);
+    const reportScope = reportScopeWhere(dataScope);
     const now = new Date();
     const windowStart = new Date(now.getTime() - windowDays * 24 * 60 * 60 * 1000);
     const stalePendingBefore = new Date(now.getTime() - 48 * 60 * 60 * 1000);
@@ -52,23 +87,25 @@ export async function adminRoutes(app: FastifyInstance) {
       staleOpenReports,
       openIncidents
     ] = await Promise.all([
-      prisma.user.count(),
-      prisma.user.count({ where: { status: "ACTIVE" } }),
-      prisma.profile.count({ where: { profileComplete: true } }),
+      prisma.user.count({ where: userScope }),
+      prisma.user.count({ where: { ...userScope, status: "ACTIVE" } }),
+      prisma.profile.count({ where: { profileComplete: true, user: userScope } }),
       prisma.user.count({
         where: {
+          ...userScope,
           status: "ACTIVE",
           profile: { profileComplete: true },
           sportProfiles: { some: {} },
           availability: { some: {} }
         }
       }),
-      prisma.rally.count(),
-      prisma.rally.count({ where: { acceptedAt: { not: null } } }),
-      prisma.rally.count({ where: { scheduledAt: { not: null } } }),
-      prisma.rally.count({ where: { completedAt: { not: null } } }),
+      prisma.rally.count({ where: rallyScope }),
+      prisma.rally.count({ where: { ...rallyScope, acceptedAt: { not: null } } }),
+      prisma.rally.count({ where: { ...rallyScope, scheduledAt: { not: null } } }),
+      prisma.rally.count({ where: { ...rallyScope, completedAt: { not: null } } }),
       prisma.rally.findMany({
         where: {
+          ...rallyScope,
           feedback: {
             every: { rallyAgain: true },
             some: { rallyAgain: true }
@@ -76,26 +113,37 @@ export async function adminRoutes(app: FastifyInstance) {
         },
         select: { completedAt: true, feedback: { select: { id: true } } }
       }),
-      prisma.report.count({ where: { status: { in: ["OPEN", "REVIEWING"] } } }),
-      prisma.user.count({ where: { status: "ACTIVE", lastActiveAt: { gte: windowStart } } }),
-      prisma.rally.count({ where: { createdAt: { gte: windowStart } } }),
+      prisma.report.count({
+        where: { ...reportScope, status: { in: ["OPEN", "REVIEWING"] } }
+      }),
+      prisma.user.count({
+        where: { ...userScope, status: "ACTIVE", lastActiveAt: { gte: windowStart } }
+      }),
+      prisma.rally.count({ where: { ...rallyScope, createdAt: { gte: windowStart } } }),
       prisma.rally.count({
-        where: { createdAt: { gte: windowStart }, acceptedAt: { not: null } }
+        where: { ...rallyScope, createdAt: { gte: windowStart }, acceptedAt: { not: null } }
       }),
       prisma.rally.count({
-        where: { createdAt: { gte: windowStart }, scheduledAt: { not: null } }
+        where: { ...rallyScope, createdAt: { gte: windowStart }, scheduledAt: { not: null } }
       }),
       prisma.rally.count({
-        where: { createdAt: { gte: windowStart }, completedAt: { not: null } }
+        where: { ...rallyScope, createdAt: { gte: windowStart }, completedAt: { not: null } }
       }),
-      prisma.rally.count({ where: { completedAt: { gte: windowStart } } }),
-      prisma.rally.count({ where: { cancelledAt: { gte: windowStart } } }),
-      prisma.report.count({ where: { createdAt: { gte: windowStart } } }),
-      prisma.rally.count({ where: { status: "PENDING", createdAt: { lt: stalePendingBefore } } }),
-      prisma.rally.count({ where: { status: "ACCEPTED", acceptedAt: { lt: staleAcceptedBefore } } }),
-      prisma.rally.count({ where: { status: "SCHEDULED", proposedEndAt: { lt: now } } }),
+      prisma.rally.count({ where: { ...rallyScope, completedAt: { gte: windowStart } } }),
+      prisma.rally.count({ where: { ...rallyScope, cancelledAt: { gte: windowStart } } }),
+      prisma.report.count({ where: { ...reportScope, createdAt: { gte: windowStart } } }),
+      prisma.rally.count({
+        where: { ...rallyScope, status: "PENDING", createdAt: { lt: stalePendingBefore } }
+      }),
+      prisma.rally.count({
+        where: { ...rallyScope, status: "ACCEPTED", acceptedAt: { lt: staleAcceptedBefore } }
+      }),
+      prisma.rally.count({
+        where: { ...rallyScope, status: "SCHEDULED", proposedEndAt: { lt: now } }
+      }),
       prisma.report.count({
         where: {
+          ...reportScope,
           status: { in: ["OPEN", "REVIEWING"] },
           createdAt: { lt: staleReportBefore }
         }
@@ -111,6 +159,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
     return {
       summary: {
+        dataScope,
         users,
         activeUsers,
         completeProfiles,
@@ -157,13 +206,15 @@ export async function adminRoutes(app: FastifyInstance) {
   });
 
   app.get("/users", { preHandler: app.authorizeAdmin }, async (request) => {
-    const { limit } = adminListQuerySchema.parse(request.query);
+    const { dataScope, limit } = adminListQuerySchema.parse(request.query);
     const users = await prisma.user.findMany({
+      where: userScopeWhere(dataScope),
       select: {
         id: true,
         email: true,
         status: true,
         role: true,
+        isTestAccount: true,
         createdAt: true,
         updatedAt: true,
         lastActiveAt: true,
@@ -184,7 +235,7 @@ export async function adminRoutes(app: FastifyInstance) {
       orderBy: { createdAt: "desc" },
       take: limit
     });
-    return { users };
+    return { dataScope, users };
   });
 
   app.patch("/users/:userId/status", { preHandler: app.authorizeAdmin }, async (request, reply) => {
@@ -239,8 +290,9 @@ export async function adminRoutes(app: FastifyInstance) {
   });
 
   app.get("/rallies", { preHandler: app.authorizeAdmin }, async (request) => {
-    const { limit } = adminListQuerySchema.parse(request.query);
+    const { dataScope, limit } = adminListQuerySchema.parse(request.query);
     const rallies = await prisma.rally.findMany({
+      where: rallyScopeWhere(dataScope),
       include: {
         sender: { select: { id: true, email: true, profile: true } },
         receiver: { select: { id: true, email: true, profile: true } },
@@ -250,12 +302,13 @@ export async function adminRoutes(app: FastifyInstance) {
       orderBy: { createdAt: "desc" },
       take: limit
     });
-    return { rallies };
+    return { dataScope, rallies };
   });
 
   app.get("/reports", { preHandler: app.authorizeAdmin }, async (request) => {
-    const { limit } = adminListQuerySchema.parse(request.query);
+    const { dataScope, limit } = adminListQuerySchema.parse(request.query);
     const reports = await prisma.report.findMany({
+      where: reportScopeWhere(dataScope),
       include: {
         reporter: { select: { id: true, email: true, profile: true } },
         reportedUser: { select: { id: true, email: true, profile: true } },
@@ -264,7 +317,7 @@ export async function adminRoutes(app: FastifyInstance) {
       orderBy: { createdAt: "desc" },
       take: limit
     });
-    return { reports: reports.map(presentReport) };
+    return { dataScope, reports: reports.map(presentReport) };
   });
 
   app.get("/incidents", { preHandler: app.authorizeAdmin }, async (request) => {

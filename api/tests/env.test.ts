@@ -51,7 +51,27 @@ describe("environment validation", () => {
       JWT_SECRET: "replace-with-at-least-32-random-characters"
     });
     expect(parsed.NODE_ENV).toBe("development");
+    expect(parsed.RATE_LIMIT_MAX).toBe(120);
     expect(parsed.TRUST_PROXY_HOPS).toBe(0);
     expect(parsed.REDIS_URL).toBeUndefined();
+  });
+
+  it("accepts a bounded smoke-test rate ceiling", () => {
+    const parsed = parseEnv({
+      DATABASE_URL: "postgresql://rally:password@localhost:5432/rally",
+      JWT_SECRET: "replace-with-at-least-32-random-characters",
+      RATE_LIMIT_MAX: "1000"
+    });
+    expect(parsed.RATE_LIMIT_MAX).toBe(1000);
+  });
+
+  it.each(["9", "10001"])("rejects an unsafe global rate ceiling of %s", (value) => {
+    expect(() =>
+      parseEnv({
+        DATABASE_URL: "postgresql://rally:password@localhost:5432/rally",
+        JWT_SECRET: "replace-with-at-least-32-random-characters",
+        RATE_LIMIT_MAX: value
+      })
+    ).toThrow();
   });
 });
