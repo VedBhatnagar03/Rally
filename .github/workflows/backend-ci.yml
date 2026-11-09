@@ -28,9 +28,19 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       NODE_ENV: test
       DATABASE_URL: postgresql://rally:rally_password@localhost:5432/rally
+      REDIS_URL: redis://localhost:6379
       JWT_SECRET: ci-only-secret-with-at-least-32-characters
       CORS_ORIGIN: http://localhost:3000
       PUBLIC_APP_URL: http://localhost:3000

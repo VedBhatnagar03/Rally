@@ -20,7 +20,7 @@ Rally's core loop:
 - Zod environment validation
 - JWT access tokens
 - Argon2 password hashing
-- Helmet, CORS, rate limiting, request IDs, structured logging
+- Helmet, CORS, Redis-backed distributed rate limiting, request IDs, structured logging
 - Docker production image
 - Vitest test runner
 
@@ -58,7 +58,7 @@ npm run dev --prefix web
 - Passwords are hashed with Argon2id.
 - JWT payloads are minimal and short-lived.
 - CORS is environment driven.
-- Rate limiting is enabled globally.
+- Rate limiting is enabled globally and shared across production API replicas through Redis.
 - Request bodies are capped.
 - Secrets are never committed.
 - Prisma queries are used instead of handwritten SQL in request handlers.
@@ -128,6 +128,8 @@ npm run dev
 In development, `POST /v1/auth/register` returns a `devVerificationToken` so the team can test email verification without an email provider. Production responses never include that token.
 
 Profile photos use private presigned uploads. The API decodes, rotates, bounds, strips metadata from, and converts each image to WebP before publishing it. The local Compose stack provides S3-compatible storage through VersityGW; run `npm run storage:init` after first startup. Production may use any S3-compatible provider with the photo-storage environment variables.
+
+Production requires `REDIS_URL` with a `rediss://` URL. The Redis deployment must be shared by every API replica; it stores distributed rate-limit counters and is included in `/ready` dependency checks. Local development may omit Redis and use an in-process limiter, but the Compose configuration supplies Redis by default.
 
 Onboarding supports up to three answers from the reviewed prompt catalog and up to twelve short interests. Recommendations return the candidate's public discovery profile while withholding email, exact availability, and dating-filter preferences.
 

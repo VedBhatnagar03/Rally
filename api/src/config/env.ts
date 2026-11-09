@@ -6,11 +6,16 @@ const optionalSecret = z.preprocess(
   z.string().min(1).optional()
 );
 
+const optionalUrl = z.preprocess(
+  (value) => (value === "" ? undefined : value),
+  z.string().url().optional()
+);
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(4000),
   DATABASE_URL: z.string().url(),
-  REDIS_URL: z.string().url().optional(),
+  REDIS_URL: optionalUrl,
   JWT_SECRET: z.string().min(32),
   JWT_EXPIRES_IN: z.string().default("15m"),
   REFRESH_TOKEN_DAYS: z.coerce.number().int().min(1).max(90).default(30),
@@ -42,6 +47,19 @@ const envSchema = z.object({
     });
   }
   if (value.NODE_ENV === "production") {
+    if (!value.REDIS_URL) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "REDIS_URL is required in production",
+        path: ["REDIS_URL"]
+      });
+    } else if (new URL(value.REDIS_URL).protocol !== "rediss:") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "REDIS_URL must use TLS (rediss://) in production",
+        path: ["REDIS_URL"]
+      });
+    }
     if (value.DEV_TOOLS_ENABLED) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
