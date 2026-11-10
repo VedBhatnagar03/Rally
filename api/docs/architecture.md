@@ -20,6 +20,7 @@ Rally does not scrape or automate Active Illini. The backend suggests the best s
 - Founder metrics: configurable funnel windows, completed Rallies per active user and stalled-operation counts.
 - Beta data integrity: persisted real/test account classification keeps seeded activity out of founder metrics by default, while explicit admin scopes preserve fixture visibility.
 - Founder audit visibility: admin-only, filtered and cursor-paginated access to security-relevant backend events.
+- Founder mutation integrity: account-status changes, report decisions and incident resolutions commit atomically with their audit record; exact retries are idempotent and conflicting incident resolutions are rejected.
 - Safety audit integrity: block, unblock and first-time report audit records commit atomically with their safety state changes.
 - Error visibility: unexpected request failures are logged and persisted as sanitized, admin-only incidents.
 - Account safety: password-confirmed deactivation/deletion, session revocation and user-controlled unblock.

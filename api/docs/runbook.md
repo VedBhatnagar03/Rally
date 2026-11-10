@@ -130,6 +130,10 @@ Use `GET /v1/admin/audit-logs` to inspect security-relevant activity. Filter by 
 `actorUserId`, and follow `nextCursor` for older records. Treat IP addresses, user-agent strings and
 audit metadata as private operational data; access them only for a specific support, moderation or
 security purpose.
+Privileged user-status changes, report decisions and incident resolutions are committed in the same
+database transaction as their audit entry. Retrying an identical request does not create a second
+audit record or alter the original resolution timestamp. A conflicting second incident resolution
+returns `409`; inspect the existing decision before taking any further action.
 6. Rotate any secret that may have been exposed and document the decision timeline.
 
 Authentication failures remain intentionally generic. Audit logs and safety records must be retained according to the beta privacy policy and exported before destructive database recovery.

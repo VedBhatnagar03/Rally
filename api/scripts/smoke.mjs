@@ -71,6 +71,16 @@ function assertStatus(name, actual, expected) {
   }
 }
 
+async function adminAuditCount(action, metadataMatch) {
+  const entries = await smokePrisma.auditLog.findMany({
+    where: { userId: adminLogin.body.user.id, action },
+    select: { metadata: true }
+  });
+  return entries.filter(({ metadata }) =>
+    Object.entries(metadataMatch).every(([key, value]) => metadata?.[key] === value)
+  ).length;
+}
+
 function nextDateForDay(dayOfWeek) {
   const now = new Date();
   const delta = (dayOfWeek - now.getDay() + 7) % 7 || 7;
@@ -617,6 +627,33 @@ assertStatus("resolve operational incident", resolvedIncident.status, 200);
 if (!resolvedIncident.body.incident.resolvedAt || !resolvedIncident.body.incident.resolvedById) {
   throw new Error("resolve operational incident: expected resolution attribution");
 }
+const retriedIncidentResolution = await request(
+  `/v1/admin/incidents/${smokeIncident.id}/resolve`,
+  {
+    method: "PATCH",
+    headers: { authorization: `Bearer ${adminLogin.body.token}` },
+    body: JSON.stringify({ resolutionNote: "Verified by the backend smoke suite" })
+  }
+);
+assertStatus("retry identical incident resolution", retriedIncidentResolution.status, 200);
+if (
+  retriedIncidentResolution.body.incident.resolvedAt !==
+  resolvedIncident.body.incident.resolvedAt
+) {
+  throw new Error("retry identical incident resolution: changed the original resolution");
+}
+const conflictingIncidentResolution = await request(
+  `/v1/admin/incidents/${smokeIncident.id}/resolve`,
+  {
+    method: "PATCH",
+    headers: { authorization: `Bearer ${adminLogin.body.token}` },
+    body: JSON.stringify({ resolutionNote: "Conflicting second resolution" })
+  }
+);
+assertStatus("reject conflicting incident resolution", conflictingIncidentResolution.status, 409);
+if ((await adminAuditCount("admin.incident_resolved", { incidentId: smokeIncident.id })) !== 1) {
+  throw new Error("resolve operational incident: expected one atomic admin audit");
+}
 
 const rallyCancelledByBlock = await post(
   "/v1/rallies",
@@ -789,6 +826,23 @@ assertStatus("resolve moderation report", resolvedReport.status, 200);
 if (!resolvedReport.body.report.resolvedAt || !resolvedReport.body.report.resolvedById) {
   throw new Error("resolve moderation report: expected resolution attribution");
 }
+const retriedReportResolution = await request(`/v1/admin/reports/${report.body.report.id}`, {
+  method: "PATCH",
+  headers: { authorization: `Bearer ${adminLogin.body.token}` },
+  body: JSON.stringify({ status: "RESOLVED", resolutionNote: "Reviewed during smoke test" })
+});
+assertStatus("retry identical report resolution", retriedReportResolution.status, 200);
+if (retriedReportResolution.body.report.resolvedAt !== resolvedReport.body.report.resolvedAt) {
+  throw new Error("retry identical report resolution: changed the original resolution");
+}
+if (
+  (await adminAuditCount("admin.report_updated", {
+    reportId: report.body.report.id,
+    status: "RESOLVED"
+  })) !== 1
+) {
+  throw new Error("resolve moderation report: expected one atomic admin audit");
+}
 
 const rallyCancelledBySuspension = await post(
   "/v1/rallies",
@@ -808,6 +862,23 @@ const suspended = await request(`/v1/admin/users/${other.user.id}/status`, {
   body: JSON.stringify({ status: "SUSPENDED", reason: "Smoke test suspension" })
 });
 assertStatus("suspend user", suspended.status, 200);
+const retriedSuspension = await request(`/v1/admin/users/${other.user.id}/status`, {
+  method: "PATCH",
+  headers: { authorization: `Bearer ${adminLogin.body.token}` },
+  body: JSON.stringify({ status: "SUSPENDED", reason: "Smoke test suspension" })
+});
+assertStatus("retry identical user suspension", retriedSuspension.status, 200);
+if (retriedSuspension.body.user.updatedAt !== suspended.body.user.updatedAt) {
+  throw new Error("retry identical user suspension: changed the original account transition");
+}
+if (
+  (await adminAuditCount("admin.user_status_updated", {
+    targetUserId: other.user.id,
+    status: "SUSPENDED"
+  })) !== 1
+) {
+  throw new Error("suspend user: expected one atomic admin audit");
+}
 
 const suspendedScheduler = await request(`/v1/admin/users/${schedulerB.user.id}/status`, {
   method: "PATCH",
@@ -1427,6 +1498,7 @@ console.log(JSON.stringify({
     "normal admin rejection",
     "filtered paginated founder audit visibility",
     "operational incident capture and resolution",
+    "atomic idempotent founder operations and audits",
     "founder report resolution and user suspension",
     "idempotent quota-protected manual reports",
     "report-based interaction exclusion",
