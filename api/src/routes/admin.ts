@@ -15,6 +15,11 @@ import {
   updateUserStatusSchema
 } from "../modules/admin/schemas.js";
 import { buildFunnelRates, perActiveUser } from "../modules/admin/metrics.js";
+import {
+  isIncidentResolutionRetry,
+  isReportUpdateRetry,
+  reportUpdateData
+} from "../modules/admin/integrity.js";
 import { presentReport } from "../modules/safety/presentation.js";
 import { cancelActiveRalliesForUnavailableUser } from "../modules/safety/cancellation.js";
 import { writeAuditLog } from "../utils/audit.js";
@@ -246,19 +251,26 @@ export async function adminRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "You cannot suspend your own admin account" });
     }
 
-    const target = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true, status: true }
-    });
-    if (!target) return reply.code(404).send({ error: "User not found" });
-    if (target.status === "DELETED") {
-      return reply.code(409).send({ error: "Deleted accounts cannot be reactivated" });
-    }
-
     const now = new Date();
-    let user;
+    let outcome;
     try {
-      user = await runSerializableTransaction(async (tx) => {
+      outcome = await runSerializableTransaction(async (tx) => {
+        const target = await tx.user.findUnique({
+          where: { id: userId },
+          select: {
+            id: true,
+            email: true,
+            status: true,
+            role: true,
+            updatedAt: true
+          }
+        });
+        if (!target) return { kind: "not-found" as const };
+        if (target.status === "DELETED") return { kind: "deleted" as const };
+        if (target.status === body.status) {
+          return { kind: "unchanged" as const, user: target };
+        }
+
         const updated = await tx.user.update({
           where: { id: userId },
           data: { status: body.status },
@@ -271,7 +283,16 @@ export async function adminRoutes(app: FastifyInstance) {
         if (body.status === "SUSPENDED") {
           await cancelActiveRalliesForUnavailableUser(tx, userId, now);
         }
-        return updated;
+        await writeAuditLog(
+          {
+            userId: request.user.sub,
+            action: "admin.user_status_updated",
+            metadata: { targetUserId: userId, status: body.status, reason: body.reason },
+            request
+          },
+          tx
+        );
+        return { kind: "updated" as const, user: updated };
       });
     } catch (error) {
       if (error instanceof SerializableTransactionExhaustedError) {
@@ -280,13 +301,11 @@ export async function adminRoutes(app: FastifyInstance) {
       throw error;
     }
 
-    await writeAuditLog({
-      userId: request.user.sub,
-      action: "admin.user_status_updated",
-      metadata: { targetUserId: userId, status: body.status, reason: body.reason },
-      request
-    });
-    return { user };
+    if (outcome.kind === "not-found") return reply.code(404).send({ error: "User not found" });
+    if (outcome.kind === "deleted") {
+      return reply.code(409).send({ error: "Deleted accounts cannot be reactivated" });
+    }
+    return { user: outcome.user };
   });
 
   app.get("/rallies", { preHandler: app.authorizeAdmin }, async (request) => {
@@ -373,52 +392,91 @@ export async function adminRoutes(app: FastifyInstance) {
   app.patch("/incidents/:incidentId/resolve", { preHandler: app.authorizeAdmin }, async (request, reply) => {
     const { incidentId } = request.params as { incidentId: string };
     const body = resolveIncidentSchema.parse(request.body);
-    const existing = await prisma.operationalIncident.findUnique({
-      where: { id: incidentId },
-      select: { id: true }
-    });
-    if (!existing) return reply.code(404).send({ error: "Incident not found" });
-
-    const incident = await prisma.operationalIncident.update({
-      where: { id: incidentId },
-      data: {
-        resolvedAt: new Date(),
-        resolvedById: request.user.sub,
-        resolutionNote: body.resolutionNote
+    const outcome = await prisma.$transaction(async (tx) => {
+      const existing = await tx.operationalIncident.findUnique({ where: { id: incidentId } });
+      if (!existing) return { kind: "not-found" as const };
+      if (isIncidentResolutionRetry(existing, body.resolutionNote)) {
+        return { kind: "unchanged" as const, incident: existing };
       }
-    });
+      if (existing.resolvedAt !== null) return { kind: "conflict" as const };
 
-    await writeAuditLog({
-      userId: request.user.sub,
-      action: "admin.incident_resolved",
-      metadata: { incidentId },
-      request
+      const updated = await tx.operationalIncident.updateMany({
+        where: { id: incidentId, resolvedAt: null },
+        data: {
+          resolvedAt: new Date(),
+          resolvedById: request.user.sub,
+          resolutionNote: body.resolutionNote
+        }
+      });
+      if (updated.count !== 1) {
+        const concurrent = await tx.operationalIncident.findUniqueOrThrow({
+          where: { id: incidentId }
+        });
+        return isIncidentResolutionRetry(concurrent, body.resolutionNote)
+          ? { kind: "unchanged" as const, incident: concurrent }
+          : { kind: "conflict" as const };
+      }
+
+      await writeAuditLog(
+        {
+          userId: request.user.sub,
+          action: "admin.incident_resolved",
+          metadata: { incidentId },
+          request
+        },
+        tx
+      );
+      const incident = await tx.operationalIncident.findUniqueOrThrow({
+        where: { id: incidentId }
+      });
+      return { kind: "updated" as const, incident };
     });
-    return { incident };
+    if (outcome.kind === "not-found") {
+      return reply.code(404).send({ error: "Incident not found" });
+    }
+    if (outcome.kind === "conflict") {
+      return reply.code(409).send({ error: "Incident has already been resolved" });
+    }
+    return { incident: outcome.incident };
   });
 
   app.patch("/reports/:reportId", { preHandler: app.authorizeAdmin }, async (request, reply) => {
     const { reportId } = request.params as { reportId: string };
     const body = updateReportSchema.parse(request.body);
-    const existing = await prisma.report.findUnique({ where: { id: reportId }, select: { id: true } });
-    if (!existing) return reply.code(404).send({ error: "Report not found" });
-
-    const report = await prisma.report.update({
-      where: { id: reportId },
-      data: {
-        status: body.status,
-        resolutionNote: body.resolutionNote,
-        resolvedAt: body.status === "REVIEWING" ? null : new Date(),
-        resolvedById: body.status === "REVIEWING" ? null : request.user.sub
+    const outcome = await prisma.$transaction(async (tx) => {
+      const existing = await tx.report.findUnique({ where: { id: reportId } });
+      if (!existing) return { kind: "not-found" as const };
+      if (isReportUpdateRetry(existing, body)) {
+        return { kind: "unchanged" as const, report: existing };
       }
-    });
 
-    await writeAuditLog({
-      userId: request.user.sub,
-      action: "admin.report_updated",
-      metadata: { reportId, status: body.status },
-      request
+      const updated = await tx.report.updateMany({
+        where: { id: reportId, updatedAt: existing.updatedAt },
+        data: reportUpdateData(body, request.user.sub, new Date())
+      });
+      if (updated.count !== 1) {
+        const concurrent = await tx.report.findUniqueOrThrow({ where: { id: reportId } });
+        return isReportUpdateRetry(concurrent, body)
+          ? { kind: "unchanged" as const, report: concurrent }
+          : { kind: "conflict" as const };
+      }
+
+      await writeAuditLog(
+        {
+          userId: request.user.sub,
+          action: "admin.report_updated",
+          metadata: { reportId, status: body.status },
+          request
+        },
+        tx
+      );
+      const report = await tx.report.findUniqueOrThrow({ where: { id: reportId } });
+      return { kind: "updated" as const, report };
     });
-    return { report: presentReport(report) };
+    if (outcome.kind === "not-found") return reply.code(404).send({ error: "Report not found" });
+    if (outcome.kind === "conflict") {
+      return reply.code(409).send({ error: "Report was updated by another administrator" });
+    }
+    return { report: presentReport(outcome.report) };
   });
 }
