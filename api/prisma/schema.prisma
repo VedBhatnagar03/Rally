@@ -196,6 +196,7 @@ model AuditLog {
 
   @@index([userId, createdAt])
   @@index([action, createdAt])
+  @@index([createdAt])
 }
 
 model Profile {
@@ -390,6 +391,7 @@ model Report {
   sourceFeedback RallyFeedback? @relation("FeedbackSafetyReport", fields: [sourceFeedbackId], references: [id], onDelete: SetNull)
 
   @@index([status, createdAt])
+  @@index([status, resolvedAt])
   @@index([reportedUserId, createdAt])
 }
 
@@ -404,6 +406,7 @@ model AnalyticsEvent {
 
   @@index([name, createdAt])
   @@index([userId, createdAt])
+  @@index([createdAt])
 }
 
 model Notification {

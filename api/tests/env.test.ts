@@ -25,6 +25,8 @@ describe("environment validation", () => {
     expect(parsed.NODE_ENV).toBe("production");
     expect(parsed.TRUST_PROXY_HOPS).toBe(1);
     expect(parsed.DEV_TOOLS_ENABLED).toBe(false);
+    expect(parsed.ANALYTICS_RETENTION_DAYS).toBe(90);
+    expect(parsed.RESOLVED_REPORT_RETENTION_DAYS).toBe(730);
   });
 
   it.each([
@@ -73,5 +75,14 @@ describe("environment validation", () => {
         RATE_LIMIT_MAX: value
       })
     ).toThrow();
+  });
+
+  it.each([
+    ["analytics", "ANALYTICS_RETENTION_DAYS", "29"],
+    ["audit logs", "AUDIT_LOG_RETENTION_DAYS", "89"],
+    ["resolved reports", "RESOLVED_REPORT_RETENTION_DAYS", "364"],
+    ["resolved incidents", "RESOLVED_INCIDENT_RETENTION_DAYS", "2556"]
+  ])("rejects an unsafe %s retention period", (_name, key, value) => {
+    expect(() => parseEnv({ ...productionEnv, [key]: value })).toThrow();
   });
 });

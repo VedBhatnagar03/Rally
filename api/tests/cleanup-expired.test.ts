@@ -4,6 +4,25 @@ import { cleanupExpiredArtifacts } from "../src/modules/maintenance/cleanup.js";
 
 function cleanupStore(uploads: Array<{ id: string; objectKey: string }>) {
   const remaining = new Map(uploads.map((upload) => [upload.id, upload]));
+  const retainedRows = {
+    analyticsEvent: [{ id: "analytics-old" }],
+    auditLog: [{ id: "audit-old" }],
+    report: [{ id: "report-old" }],
+    operationalIncident: [{ id: "incident-old" }]
+  };
+  const retainedDelegate = (key: keyof typeof retainedRows) => ({
+    findMany: vi.fn(async ({ where, take }) =>
+      retainedRows[key]
+        .filter((row) => !where.id || row.id > where.id.gt)
+        .slice(0, take)
+    ),
+    deleteMany: vi.fn(async ({ where }) => {
+      const ids = new Set(where.id.in as string[]);
+      const before = retainedRows[key].length;
+      retainedRows[key] = retainedRows[key].filter(({ id }) => !ids.has(id));
+      return { count: before - retainedRows[key].length };
+    })
+  });
   const store = {
     photoUpload: {
       findMany: vi.fn(async ({ where, take }) =>
@@ -20,12 +39,25 @@ function cleanupStore(uploads: Array<{ id: string; objectKey: string }>) {
         return { count };
       })
     },
-    emailVerificationToken: { deleteMany: vi.fn(async () => ({ count: 2 })) },
-    passwordResetToken: { deleteMany: vi.fn(async () => ({ count: 3 })) },
-    refreshToken: { deleteMany: vi.fn(async () => ({ count: 4 })) },
+    emailVerificationToken: {
+      count: vi.fn(async () => 2),
+      deleteMany: vi.fn(async () => ({ count: 2 }))
+    },
+    passwordResetToken: {
+      count: vi.fn(async () => 3),
+      deleteMany: vi.fn(async () => ({ count: 3 }))
+    },
+    refreshToken: {
+      count: vi.fn(async () => 4),
+      deleteMany: vi.fn(async () => ({ count: 4 }))
+    },
+    analyticsEvent: retainedDelegate("analyticsEvent"),
+    auditLog: retainedDelegate("auditLog"),
+    report: retainedDelegate("report"),
+    operationalIncident: retainedDelegate("operationalIncident"),
     $transaction: vi.fn(async (operations) => Promise.all(operations))
   };
-  return { remaining, store: store as unknown as PrismaClient };
+  return { remaining, retainedRows, store: store as unknown as PrismaClient };
 }
 
 describe("expired artifact cleanup", () => {
@@ -48,7 +80,12 @@ describe("expired artifact cleanup", () => {
       passwordResetTokens: 3,
       refreshTokens: 4,
       photoUploads: 2,
-      failedPhotoUploads: 0
+      failedPhotoUploads: 0,
+      analyticsEvents: 1,
+      auditLogs: 1,
+      resolvedReports: 1,
+      resolvedIncidents: 1,
+      dryRun: false
     });
     expect(removeUploadObject).toHaveBeenCalledTimes(2);
     expect(remaining.size).toBe(0);
@@ -74,5 +111,34 @@ describe("expired artifact cleanup", () => {
     await expect(cleanupExpiredArtifacts({ batchSize: 0 })).rejects.toThrow(
       "Cleanup batch size must be an integer from 1 to 500"
     );
+  });
+
+  it("reports eligible rows without deleting data during a dry run", async () => {
+    const { remaining, retainedRows, store } = cleanupStore([
+      { id: "a", objectKey: "incoming/user/a.jpg" }
+    ]);
+    const removeUploadObject = vi.fn(async () => undefined);
+
+    const summary = await cleanupExpiredArtifacts({
+      dryRun: true,
+      batchSize: 10,
+      store,
+      removeUploadObject
+    });
+
+    expect(summary).toMatchObject({
+      emailVerificationTokens: 2,
+      passwordResetTokens: 3,
+      refreshTokens: 4,
+      photoUploads: 1,
+      analyticsEvents: 1,
+      auditLogs: 1,
+      resolvedReports: 1,
+      resolvedIncidents: 1,
+      dryRun: true
+    });
+    expect(removeUploadObject).not.toHaveBeenCalled();
+    expect(remaining.size).toBe(1);
+    expect(Object.values(retainedRows).every((rows) => rows.length === 1)).toBe(true);
   });
 });

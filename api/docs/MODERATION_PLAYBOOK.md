@@ -51,7 +51,7 @@ Resolution notes should state the relevant policy category, records reviewed, de
 - Keep evidence in approved, access-controlled systems; never personal notes, public issues, or chat screenshots shared outside the case.
 - Do not request government IDs, UINs, exact residence, live location, medical records, or intimate images.
 - Do not download or redistribute sensitive material unless necessary and lawful.
-- Retain reports, audit records, and backups only for the reviewed retention period established before beta expansion.
+- Retain resolved or dismissed reports for up to 730 days and audit records for up to 365 days. Open or reviewing reports remain until a decision is completed. Backups follow the separately reviewed provider rotation policy.
 
 ## Follow-Up
 
@@ -59,4 +59,4 @@ Check for related open reports, block evasion, or active Rallies that require ca
 
 ## Before Inviting Testers
 
-The founder must add a monitored support/privacy contact, choose response expectations, define retention periods, verify emergency/campus resource links, and obtain appropriate legal review of the privacy notice, guidelines, consent language, and moderation process.
+The founder must add a monitored support/privacy contact, choose response expectations, document the backup rotation period, verify emergency/campus resource links, and obtain appropriate legal review of the privacy notice, guidelines, consent language, retention periods, and moderation process.
