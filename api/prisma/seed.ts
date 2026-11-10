@@ -102,11 +102,13 @@ async function main() {
       create: {
         email,
         passwordHash: demoPasswordHash,
-        status: "ACTIVE"
+        status: "ACTIVE",
+        isTestAccount: true
       },
       update: {
         passwordHash: demoPasswordHash,
-        status: "ACTIVE"
+        status: "ACTIVE",
+        isTestAccount: true
       }
     });
 
@@ -180,11 +182,13 @@ async function main() {
           email,
           passwordHash,
           status: "ACTIVE",
-          role: "ADMIN"
+          role: "ADMIN",
+          isTestAccount: false
         },
         update: {
           status: "ACTIVE",
-          role: "ADMIN"
+          role: "ADMIN",
+          isTestAccount: false
         }
       });
     }

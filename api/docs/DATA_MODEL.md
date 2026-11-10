@@ -2,7 +2,7 @@
 
 ## Core Tables
 
-- `User`: login identity, UIUC email, password hash, verification/account-lifecycle status, admin role, throttled last-active timestamp and versioned 18+/policy consent timestamps.
+- `User`: login identity, UIUC email, password hash, verification/account-lifecycle status, admin role, explicit test-account classification, throttled last-active timestamp and versioned 18+/policy consent timestamps.
 - `EmailVerificationToken`: hash-only email verification tokens.
 - `PasswordResetToken`: hash-only, single-use account recovery tokens with a one-hour expiry.
 - `RefreshToken`: hash-only, rotating session tokens grouped into families for replay containment, with expiry and explicit revocation reasons.
@@ -24,6 +24,8 @@
 
 ## Privacy Notes
 
+- Real beta accounts and seeded fixtures are separated by persisted `isTestAccount` state rather than email naming. Founder metrics and list views default to real users; test or combined data requires an explicit admin query scope.
+- Development profile and session-minting routes operate only on explicitly classified test accounts, preventing accidental impersonation of real beta users in local or staging datasets.
 - Feedback is private by default.
 - Identical feedback retries are idempotent; conflicting edits are rejected after the first submission.
 - A negative post-Rally safety check creates one confidential, feedback-linked report for founder review, even when a client retries submission.

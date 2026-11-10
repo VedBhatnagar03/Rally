@@ -18,6 +18,7 @@ Rally does not scrape or automate Active Illini. The backend suggests the best s
 - Audit: security-relevant event trail.
 - Founder operations: protected user/Rally inspection, report resolution and account suspension.
 - Founder metrics: configurable funnel windows, completed Rallies per active user and stalled-operation counts.
+- Beta data integrity: persisted real/test account classification keeps seeded activity out of founder metrics by default, while explicit admin scopes preserve fixture visibility.
 - Founder audit visibility: admin-only, filtered and cursor-paginated access to security-relevant backend events.
 - Safety audit integrity: block, unblock and first-time report audit records commit atomically with their safety state changes.
 - Error visibility: unexpected request failures are logged and persisted as sanitized, admin-only incidents.
@@ -44,6 +45,7 @@ Rally does not scrape or automate Active Illini. The backend suggests the best s
 4. Security-sensitive events write to `AuditLog`.
 5. Responses avoid returning password hashes, token hashes, and internal secrets.
 6. Protected requests re-check active user status so suspension takes effect immediately.
+7. Development session minting is limited to explicitly classified test accounts and remains unavailable in production.
 
 ## Matching V1
 

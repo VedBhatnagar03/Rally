@@ -41,6 +41,7 @@ jobs:
       NODE_ENV: test
       DATABASE_URL: postgresql://rally:rally_password@localhost:5432/rally
       REDIS_URL: redis://localhost:6379
+      RATE_LIMIT_MAX: 1000
       JWT_SECRET: ci-only-secret-with-at-least-32-characters
       CORS_ORIGIN: http://localhost:3000
       PUBLIC_APP_URL: http://localhost:3000
