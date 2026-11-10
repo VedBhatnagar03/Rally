@@ -43,6 +43,7 @@ function fail<T>(error: string): ActionResult<T> {
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
     ...options,
+    credentials: 'include',
     headers: {
       'content-type': 'application/json',
       ...options.headers,

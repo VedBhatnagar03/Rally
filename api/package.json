@@ -24,6 +24,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1150.0",
     "@aws-sdk/s3-presigned-post": "^3.1150.0",
+    "@fastify/cookie": "^11.1.5",
     "@fastify/cors": "^11.3.0",
     "@fastify/helmet": "^13.1.1",
     "@fastify/jwt": "^10.2.2",

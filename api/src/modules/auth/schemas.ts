@@ -19,7 +19,7 @@ export const verifyEmailSchema = z.object({
 });
 
 export const refreshSessionSchema = z.object({
-  refreshToken: z.string().min(32).max(256)
+  refreshToken: z.string().min(32).max(256).optional()
 });
 
 export const resendVerificationSchema = z.object({

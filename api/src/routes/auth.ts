@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import { adminEmails } from "../config/env.js";
 import { prisma } from "../db/prisma.js";
 import {
@@ -17,9 +17,20 @@ import { hashPassword, verifyPassword } from "../utils/password.js";
 import { sendPasswordResetEmail } from "../utils/password-reset-email.js";
 import { createOpaqueToken, hashToken } from "../utils/tokens.js";
 import { sendVerificationEmail } from "../utils/verification-email.js";
+import {
+  clearRefreshCookie,
+  isAllowedBrowserOrigin,
+  isAllowedSessionIssuanceOrigin,
+  publicSession,
+  refreshCredential,
+  setRefreshCookie
+} from "../modules/auth/browser-session.js";
 
 export async function authRoutes(app: FastifyInstance) {
-  async function issueSession(user: { id: string; email: string; role: "USER" | "ADMIN" }) {
+  async function issueSession(
+    user: { id: string; email: string; role: "USER" | "ADMIN" },
+    reply: FastifyReply
+  ) {
     const accessToken = app.jwt.sign({ sub: user.id, email: user.email, role: user.role });
     const refreshToken = createOpaqueToken();
     const familyId = crypto.randomUUID();
@@ -36,7 +47,8 @@ export async function authRoutes(app: FastifyInstance) {
       prisma.user.update({ where: { id: user.id }, data: { lastActiveAt: new Date() } })
     ]);
 
-    return { token: accessToken, accessToken, refreshToken, user };
+    setRefreshCookie(reply, refreshToken);
+    return publicSession({ token: accessToken, accessToken, refreshToken, user });
   }
 
   app.post("/register", { config: { rateLimit: { max: 10, timeWindow: "1 hour" } } }, async (request, reply) => {
@@ -142,6 +154,9 @@ export async function authRoutes(app: FastifyInstance) {
     "/verify-email",
     { config: { rateLimit: { max: 10, timeWindow: "1 hour" } } },
     async (request, reply) => {
+    if (!isAllowedSessionIssuanceOrigin(request.headers.origin)) {
+      return reply.code(403).send({ error: "Invalid request origin" });
+    }
     const body = verifyEmailSchema.parse(request.body);
     const tokenHash = hashToken(body.token);
 
@@ -175,7 +190,7 @@ export async function authRoutes(app: FastifyInstance) {
         id: verification.userId,
         email: verification.user.email,
         role: verification.user.role
-      });
+      }, reply);
     }
   );
 
@@ -183,6 +198,9 @@ export async function authRoutes(app: FastifyInstance) {
     "/login",
     { config: { rateLimit: { max: 10, timeWindow: "15 minutes" } } },
     async (request, reply) => {
+    if (!isAllowedSessionIssuanceOrigin(request.headers.origin)) {
+      return reply.code(403).send({ error: "Invalid request origin" });
+    }
     const body = loginSchema.parse(request.body);
     const email = normalizeEmail(body.email);
     const user = await prisma.user.findUnique({ where: { email } });
@@ -205,7 +223,7 @@ export async function authRoutes(app: FastifyInstance) {
       request
     });
 
-      return issueSession({ id: user.id, email: user.email, role: user.role });
+      return issueSession({ id: user.id, email: user.email, role: user.role }, reply);
     }
   );
 
@@ -309,14 +327,23 @@ export async function authRoutes(app: FastifyInstance) {
     "/refresh",
     { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } },
     async (request, reply) => {
-    const body = refreshSessionSchema.parse(request.body);
-    const currentHash = hashToken(body.refreshToken);
+    const body = refreshSessionSchema.parse(request.body ?? {});
+    const credential = refreshCredential(request, body.refreshToken);
+    if (!credential.token) {
+      clearRefreshCookie(reply);
+      return reply.code(401).send({ error: "Invalid or expired refresh token" });
+    }
+    if (credential.cookieBacked && !isAllowedBrowserOrigin(request.headers.origin)) {
+      return reply.code(403).send({ error: "Invalid request origin" });
+    }
+    const currentHash = hashToken(credential.token);
     const current = await prisma.refreshToken.findUnique({
       where: { tokenHash: currentHash },
       include: { user: { select: { id: true, email: true, role: true, status: true } } }
     });
 
     if (!current || current.user.status !== "ACTIVE") {
+      clearRefreshCookie(reply);
       return reply.code(401).send({ error: "Invalid or expired refresh token" });
     }
 
@@ -333,10 +360,12 @@ export async function authRoutes(app: FastifyInstance) {
           request
         });
       }
+      clearRefreshCookie(reply);
       return reply.code(401).send({ error: "Invalid or expired refresh token" });
     }
 
     if (current.expiresAt <= new Date()) {
+      clearRefreshCookie(reply);
       return reply.code(401).send({ error: "Invalid or expired refresh token" });
     }
 
@@ -371,6 +400,7 @@ export async function authRoutes(app: FastifyInstance) {
         metadata: { familyId: current.familyId },
         request
       });
+      clearRefreshCookie(reply);
       return reply.code(401).send({ error: "Invalid or expired refresh token" });
     }
 
@@ -382,19 +412,26 @@ export async function authRoutes(app: FastifyInstance) {
 
     await writeAuditLog({ userId: current.user.id, action: "auth.refresh", request });
 
-      return {
+      setRefreshCookie(reply, nextRefreshToken);
+      return publicSession({
         token: accessToken,
         accessToken,
         refreshToken: nextRefreshToken,
         user: { id: current.user.id, email: current.user.email, role: current.user.role }
-      };
+      });
     }
   );
 
   app.post("/logout", async (request, reply) => {
-    const body = refreshSessionSchema.parse(request.body);
+    const body = refreshSessionSchema.parse(request.body ?? {});
+    const credential = refreshCredential(request, body.refreshToken);
+    if (credential.cookieBacked && !isAllowedBrowserOrigin(request.headers.origin)) {
+      return reply.code(403).send({ error: "Invalid request origin" });
+    }
+    clearRefreshCookie(reply);
+    if (!credential.token) return reply.code(204).send();
     const session = await prisma.refreshToken.findUnique({
-      where: { tokenHash: hashToken(body.refreshToken) },
+      where: { tokenHash: hashToken(credential.token) },
       select: { id: true, userId: true, revokedAt: true }
     });
 
