@@ -43,8 +43,9 @@ Rally is not affiliated with, endorsed by, or an official service of the Univers
 - Active account data is kept while the closed beta operates and while the account remains active.
 - Deactivation disables access and revokes sessions without immediately deleting the account.
 - Account deletion removes profile, sport, availability, photo, token, block, analytics, and private feedback-note data and anonymizes the retained account identity.
-- Shared Rally records, safety reports, report outcomes, and limited audit records may be retained after deletion to protect participants, investigate abuse, and preserve operational integrity.
-- The founder must set and document concrete retention periods for reports, audit logs, backups, and operational incidents before the beta expands.
+- Shared Rally records may be retained after deletion to protect participants and preserve operational integrity. Resolved or dismissed safety reports are retained for up to 730 days; open or reviewing reports remain available until a moderation decision is completed.
+- Product analytics events are retained for up to 90 days. Audit logs and resolved operational incidents are retained for up to 365 days; unresolved incidents remain available until remediation is completed.
+- Production backup retention is controlled by the reviewed hosting-provider policy and must be documented before beta expansion. Expired records may remain in encrypted backups until those backups rotate out and are not restored except for disaster recovery.
 
 ## User Choices
 

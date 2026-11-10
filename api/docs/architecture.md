@@ -23,6 +23,7 @@ Rally does not scrape or automate Active Illini. The backend suggests the best s
 - Founder mutation integrity: account-status changes, report decisions and incident resolutions commit atomically with their audit record; exact retries are idempotent and conflicting incident resolutions are rejected.
 - Safety audit integrity: block, unblock and first-time report audit records commit atomically with their safety state changes.
 - Error visibility: unexpected request failures are logged and persisted as sanitized, admin-only incidents.
+- Data minimization: a bounded scheduled job enforces configurable retention for analytics, audit, resolved safety and resolved incident records while preserving active investigations.
 - Account safety: password-confirmed deactivation/deletion, session revocation and user-controlled unblock.
 - Account unavailability: suspension, deactivation and deletion atomically cancel active Rallies with neutral participant notifications while preserving confirmed booking handoff details.
 - Rally integrity: one active Rally per user pair, bounded future scheduling windows and immediate cancellation after a block.

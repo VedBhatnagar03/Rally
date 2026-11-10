@@ -36,7 +36,7 @@ Seeded profile fixtures are persisted with `isTestAccount=true`; normal registra
 
 Never alter a real account into a test account through ad hoc SQL. Development profile and session routes intentionally expose test accounts only. Do not run the seed command against production unless a reviewed operational procedure explicitly requires test fixtures in that environment.
 
-## Expired Artifact Cleanup
+## Retention And Expired Artifact Cleanup
 
 Run the compiled maintenance command at least hourly as a single scheduled job:
 
@@ -44,10 +44,24 @@ Run the compiled maintenance command at least hourly as a single scheduled job:
 npm run cleanup:expired
 ```
 
+Before enabling or changing the production schedule, inspect the eligible row counts without
+deleting anything:
+
+```bash
+npm run cleanup:expired:dry-run
+```
+
 The job removes expired email-verification, password-reset and refresh-token rows. It also deletes
 expired private staging-upload objects before removing their `PhotoUpload` rows. Published profile
 photos are never targeted. Storage failures leave the database row intact for the next retry and
 make the command exit unsuccessfully so operations can alert on incomplete cleanup.
+
+The same bounded job enforces the reviewed beta retention defaults: analytics events after 90 days,
+audit logs and resolved operational incidents after 365 days, and resolved or dismissed safety
+reports after 730 days. Open/reviewing reports and unresolved incidents are excluded regardless of
+age. Configure the periods with `ANALYTICS_RETENTION_DAYS`, `AUDIT_LOG_RETENTION_DAYS`,
+`RESOLVED_REPORT_RETENTION_DAYS`, and `RESOLVED_INCIDENT_RETENTION_DAYS`. Review dry-run counts and
+take the required backup before reducing any period.
 
 ## Health Checks
 
@@ -61,6 +75,7 @@ make the command exit unsuccessfully so operations can alert on incomplete clean
 - `NODE_ENV=production`
 - `DATABASE_URL`: TLS-protected production PostgreSQL URL.
 - `RATE_LIMIT_MAX`: global per-minute client-IP ceiling. Keep the production value at the reviewed default of `120`; CI uses a higher value only because its full smoke journey originates from one process and IP.
+- `*_RETENTION_DAYS`: reviewed data-retention periods documented above. Production validation rejects values outside the safe beta bounds.
 - `JWT_SECRET`: independently generated secret of at least 32 characters.
 - `CORS_ORIGIN`: exact HTTPS frontend origin; use a comma-separated allowlist only when required.
 - `PUBLIC_APP_URL`: exact HTTPS frontend origin used in email links.

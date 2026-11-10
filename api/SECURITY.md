@@ -31,7 +31,7 @@
 - Add centralized secret management.
 - Enable encrypted automated backups and test a restore using the runbook.
 - Add external alert delivery for new operational incidents.
-- Define structured security and audit-log retention periods.
+- Run and monitor the documented retention cleanup schedule; review dry-run counts before changing periods.
 - Publish reviewed privacy and community materials in the frontend before inviting beta users.
 
 ## Reporting Issues
