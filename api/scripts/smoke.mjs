@@ -258,6 +258,19 @@ if (migratedConsent.body.consent.policyVersion !== currentPolicyVersion) {
   throw new Error("record existing-account policy consent: expected current policy version");
 }
 
+const devProfiles = await get("/v1/dev/profiles");
+assertStatus("list development test profiles", devProfiles.status, 200);
+if (
+  devProfiles.body.profiles.length < 20 ||
+  devProfiles.body.profiles.some((profile) => profile.isTestAccount !== true)
+) {
+  throw new Error("development profiles: expected only explicitly classified test accounts");
+}
+const devSession = await post("/v1/dev/sessions", {
+  userId: devProfiles.body.profiles[0].id
+});
+assertStatus("mint development test session", devSession.status, 200);
+
 const refreshedAdmin = await post("/v1/auth/refresh", {
   refreshToken: adminLogin.body.refreshToken
 });
@@ -291,6 +304,9 @@ const schedulerA = await createVerifiedUser("schedulerA");
 const schedulerB = await createVerifiedUser("schedulerB");
 const raceA = await createVerifiedUser("raceA");
 const raceB = await createVerifiedUser("raceB");
+
+const realDevSession = await post("/v1/dev/sessions", { userId: normal.user.id });
+assertStatus("reject development session for real account", realDevSession.status, 404);
 
 const analyticsEvent = await post(
   "/v1/analytics/events",
@@ -558,6 +574,7 @@ for (const forbiddenField of ["passwordHash", "tokenHash", "refreshToken", "oper
 const adminSummary = await get("/v1/admin/summary?windowDays=7", adminLogin.body.token);
 assertStatus("admin summary", adminSummary.status, 200);
 if (
+  adminSummary.body.summary.dataScope !== "REAL" ||
   adminSummary.body.summary.window?.days !== 7 ||
   adminSummary.body.summary.window.activeUsers < 1 ||
   typeof adminSummary.body.summary.window.outcomes?.completedRalliesPerActiveUser !== "number" ||
@@ -565,6 +582,15 @@ if (
   typeof adminSummary.body.summary.operations?.pendingOver48Hours !== "number"
 ) {
   throw new Error("admin summary: expected founder funnel and operational metrics");
+}
+
+const testSummary = await get(
+  "/v1/admin/summary?windowDays=7&dataScope=TEST",
+  adminLogin.body.token
+);
+assertStatus("admin test-data summary", testSummary.status, 200);
+if (testSummary.body.summary.dataScope !== "TEST" || testSummary.body.summary.users < 20) {
+  throw new Error("admin test-data summary: expected explicitly scoped fixture metrics");
 }
 
 const normalSummary = await get("/v1/admin/summary", normal.token);
@@ -901,9 +927,27 @@ await assertNeutralCancellation(
 
 const adminUsers = await get("/v1/admin/users?limit=100", adminLogin.body.token);
 assertStatus("admin user inspection", adminUsers.status, 200);
+if (
+  adminUsers.body.dataScope !== "REAL" ||
+  adminUsers.body.users.some((user) => user.isTestAccount !== false)
+) {
+  throw new Error("admin user inspection: expected real beta accounts by default");
+}
 const anonymized = adminUsers.body.users.find((user) => user.id === deleting.user.id);
 if (!anonymized || anonymized.status !== "DELETED" || !anonymized.email.endsWith("@deleted.invalid")) {
   throw new Error("delete account: expected anonymized retained identity");
+}
+
+const adminTestUsers = await get(
+  "/v1/admin/users?limit=100&dataScope=TEST",
+  adminLogin.body.token
+);
+assertStatus("admin test-account inspection", adminTestUsers.status, 200);
+if (
+  adminTestUsers.body.users.length < 20 ||
+  adminTestUsers.body.users.some((user) => user.isTestAccount !== true)
+) {
+  throw new Error("admin test-account inspection: expected only classified fixtures");
 }
 
 const blockedRally = await post(
@@ -1378,6 +1422,7 @@ console.log(JSON.stringify({
     "logout revocation",
     "single-use password recovery and session revocation",
     "admin authorization",
+    "real and test account data separation",
     "founder funnel and operational metrics",
     "normal admin rejection",
     "filtered paginated founder audit visibility",

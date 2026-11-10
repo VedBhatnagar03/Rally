@@ -111,7 +111,7 @@ Current foundation:
 
 This repo starts with a secure backend spine. It intentionally does not automate Active Illini court reservations. V1 treats court booking as a guided handoff: Rally suggests a sport, venue, and time, then stores the booking status and confirmation details once a user reserves through the official campus workflow.
 
-The shared Next.js app can run its backend harness against this service by setting `NEXT_PUBLIC_RALLY_DATA_SOURCE=fastify` in the root `.env.local`. For local harness use only, set `DEV_TOOLS_ENABLED=true` in `api/.env`; this enables `/v1/dev/*` profile listing and session minting. Those routes return `404` in production or whenever the flag is off.
+The shared Next.js app can run its backend harness against this service by setting `NEXT_PUBLIC_RALLY_DATA_SOURCE=fastify` in the root `.env.local`. For local harness use only, set `DEV_TOOLS_ENABLED=true` in `api/.env`; this enables `/v1/dev/*` profile listing and session minting for explicitly classified test accounts only. Those routes return `404` in production or whenever the flag is off.
 
 ## Verified Local Flow
 
@@ -134,3 +134,5 @@ Production requires `REDIS_URL` with a `rediss://` URL. The Redis deployment mus
 Onboarding supports up to three answers from the reviewed prompt catalog and up to twelve short interests. Recommendations return the candidate's public discovery profile while withholding email, exact availability, and dating-filter preferences.
 
 Analytics ingestion uses the strict beta catalog in `docs/ANALYTICS.md`; arbitrary names and free-form metadata are rejected.
+
+Seeded profiles carry persisted `isTestAccount=true` state. Founder summary and list endpoints default to real beta data; admins must pass `dataScope=TEST` or `dataScope=ALL` to intentionally inspect fixtures or a combined view.

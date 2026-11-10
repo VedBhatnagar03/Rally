@@ -30,6 +30,12 @@ npm run smoke
 
 GitHub Actions runs both paths for every backend pull request. It applies all migrations to a clean PostgreSQL 16 database, starts the compiled server, waits for readiness, and runs the smoke suite.
 
+## Real And Test Data
+
+Seeded profile fixtures are persisted with `isTestAccount=true`; normal registration, migrated accounts and founder accounts default to real data. The migration never infers test status from an email address. Rerun the idempotent seed command in existing development or staging environments to classify their fixtures. Founder summary, user, Rally and report endpoints default to `dataScope=REAL`. An administrator may explicitly request `dataScope=TEST` for fixture verification or `dataScope=ALL` for a combined operational view.
+
+Never alter a real account into a test account through ad hoc SQL. Development profile and session routes intentionally expose test accounts only. Do not run the seed command against production unless a reviewed operational procedure explicitly requires test fixtures in that environment.
+
 ## Expired Artifact Cleanup
 
 Run the compiled maintenance command at least hourly as a single scheduled job:
@@ -54,6 +60,7 @@ make the command exit unsuccessfully so operations can alert on incomplete clean
 
 - `NODE_ENV=production`
 - `DATABASE_URL`: TLS-protected production PostgreSQL URL.
+- `RATE_LIMIT_MAX`: global per-minute client-IP ceiling. Keep the production value at the reviewed default of `120`; CI uses a higher value only because its full smoke journey originates from one process and IP.
 - `JWT_SECRET`: independently generated secret of at least 32 characters.
 - `CORS_ORIGIN`: exact HTTPS frontend origin; use a comma-separated allowlist only when required.
 - `PUBLIC_APP_URL`: exact HTTPS frontend origin used in email links.
