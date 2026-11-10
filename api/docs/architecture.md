@@ -6,7 +6,7 @@ Rally does not scrape or automate Active Illini. The backend suggests the best s
 
 ## Core Domains
 
-- Auth: UIUC-only registration, versioned 18+/policy consent, Resend-backed verification and password recovery, login, short-lived JWT issuance, rotating refresh-token families with replay containment, and logout revocation.
+- Auth: UIUC-only registration, versioned 18+/policy consent, Resend-backed verification and password recovery, login, short-lived JWT issuance, browser-bound HttpOnly refresh cookies, rotating refresh-token families with replay containment, and logout revocation.
 - Profile: campus identity, dating intent, gender preferences, trust profile.
 - Discovery profile: reviewed prompts, short interests, ordered photos and a privacy-shaped candidate response.
 - Sports: racket sport interests, skill, intensity, favorites.
@@ -48,6 +48,7 @@ Rally does not scrape or automate Active Illini. The backend suggests the best s
 5. Responses avoid returning password hashes, token hashes, and internal secrets.
 6. Protected requests re-check active user status so suspension takes effect immediately.
 7. Development session minting is limited to explicitly classified test accounts and remains unavailable in production.
+8. Production refresh credentials never appear in JSON; session issuance and cookie-backed refresh/logout requests require an exact configured frontend Origin.
 
 ## Matching V1
 

@@ -92,6 +92,12 @@ image before shifting traffic; do not weaken these checks to make a deployment b
 
 Store secrets in the hosting provider's secret manager. Never place production values in an image, repository, build log, or committed `.env` file.
 
+Browser login and email verification require an exact configured frontend `Origin` and set the rotating refresh credential as a `Secure`, `HttpOnly`,
+`SameSite=Lax` cookie scoped to `/v1/auth`. Production refresh and logout requests must include
+browser credentials and an exact `Origin` from `CORS_ORIGIN`; refresh tokens are never returned in
+production JSON. Keep the frontend and API on same-site HTTPS origins so the cookie is sent without
+weakening its SameSite policy.
+
 ## Deploy Procedure
 
 1. Confirm backend CI is green on the exact commit being deployed.

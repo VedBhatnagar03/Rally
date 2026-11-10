@@ -9,6 +9,7 @@
 - Verification tokens are opaque and stored only as SHA-256 hashes.
 - Password reset tokens are single-use, expire after one hour, and are stored only as SHA-256 hashes.
 - JWT access tokens are short-lived and carry only `sub` and `email`.
+- Browser refresh tokens use `Secure`, `HttpOnly`, `SameSite=Lax` cookies, remain absent from production JSON, and rotate on use.
 - Secrets live in environment variables and `.env` is ignored.
 - CORS is explicitly configured through `CORS_ORIGIN`.
 - Helmet sets defensive HTTP headers.
@@ -26,7 +27,6 @@
 ## Must Do Before Production
 
 - Verify the production Resend sender domain and delivery path.
-- Use HTTPS-only secure cookies if refresh tokens are enabled for browser sessions.
 - Add per-route abuse controls for auth endpoints.
 - Add centralized secret management.
 - Enable encrypted automated backups and test a restore using the runbook.

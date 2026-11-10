@@ -306,6 +306,41 @@ const loggedOutRefresh = await post("/v1/auth/refresh", {
 });
 assertStatus("reject logged-out refresh", loggedOutRefresh.status, 401);
 
+const browserLogin = await post("/v1/auth/login", { email: adminEmail, password });
+assertStatus("browser session login", browserLogin.status, 200);
+const browserSetCookie = browserLogin.headers.get("set-cookie") ?? "";
+const browserCookie = browserSetCookie.split(";")[0];
+for (const attribute of ["Path=/v1/auth", "HttpOnly", "SameSite=Lax"]) {
+  if (!browserSetCookie.toLowerCase().includes(attribute.toLowerCase())) {
+    throw new Error(`browser session login: missing ${attribute} cookie attribute`);
+  }
+}
+const originlessBrowserRefresh = await request("/v1/auth/refresh", {
+  method: "POST",
+  headers: { cookie: browserCookie },
+  body: "{}"
+});
+assertStatus("reject originless cookie refresh", originlessBrowserRefresh.status, 403);
+const browserRefresh = await request("/v1/auth/refresh", {
+  method: "POST",
+  headers: { cookie: browserCookie, origin: "http://localhost:3000" },
+  body: "{}"
+});
+assertStatus("rotate browser refresh cookie", browserRefresh.status, 200);
+const rotatedBrowserCookie = (browserRefresh.headers.get("set-cookie") ?? "").split(";")[0];
+if (!rotatedBrowserCookie || rotatedBrowserCookie === browserCookie) {
+  throw new Error("rotate browser refresh cookie: expected a new credential");
+}
+const browserLogout = await request("/v1/auth/logout", {
+  method: "POST",
+  headers: { cookie: rotatedBrowserCookie, origin: "http://localhost:3000" },
+  body: "{}"
+});
+assertStatus("clear browser refresh cookie", browserLogout.status, 204);
+if (!/Max-Age=0/i.test(browserLogout.headers.get("set-cookie") ?? "")) {
+  throw new Error("clear browser refresh cookie: expected immediate cookie expiry");
+}
+
 const normal = await createVerifiedUser("normal", true);
 const other = await createVerifiedUser("other");
 const deactivating = await createVerifiedUser("deactivating");
@@ -1491,6 +1526,7 @@ console.log(JSON.stringify({
     "refresh rotation and replay rejection",
     "refresh-token family replay containment",
     "logout revocation",
+    "HttpOnly browser refresh rotation and CSRF rejection",
     "single-use password recovery and session revocation",
     "admin authorization",
     "real and test account data separation",

@@ -1,4 +1,5 @@
 import cors from "@fastify/cors";
+import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
 import jwt from "@fastify/jwt";
 import rateLimit from "@fastify/rate-limit";
@@ -34,7 +35,7 @@ export function buildApp() {
         : false,
     logger: {
       level: env.LOG_LEVEL,
-      redact: ["req.headers.authorization", "password", "passwordHash"]
+      redact: ["req.headers.authorization", "req.headers.cookie", "password", "passwordHash"]
     },
     bodyLimit: 1_000_000,
     genReqId: () => crypto.randomUUID()
@@ -91,6 +92,7 @@ export function buildApp() {
   });
 
   app.register(helmet);
+  app.register(cookie);
   app.register(cors, {
     origin: env.CORS_ORIGIN.split(",").map((origin) => origin.trim()),
     credentials: true
