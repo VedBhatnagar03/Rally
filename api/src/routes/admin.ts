@@ -273,7 +273,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
         const updated = await tx.user.update({
           where: { id: userId },
-          data: { status: body.status },
+          data: { status: body.status, authVersion: { increment: 1 } },
           select: { id: true, email: true, status: true, role: true, updatedAt: true }
         });
         await tx.refreshToken.updateMany({

@@ -411,6 +411,11 @@ assertStatus("reject reset token replay", resetReplay.status, 400);
 
 const revokedByReset = await post("/v1/auth/refresh", { refreshToken: normal.refreshToken });
 assertStatus("revoke sessions after password reset", revokedByReset.status, 401);
+assertStatus(
+  "revoke access token after password reset",
+  (await get("/v1/me", normal.token)).status,
+  401
+);
 
 const oldPasswordLogin = await post("/v1/auth/login", {
   email: normal.user.email,
@@ -423,6 +428,7 @@ const recoveredLogin = await post("/v1/auth/login", {
   password: recoveredPassword
 });
 assertStatus("login with recovered password", recoveredLogin.status, 200);
+Object.assign(normal, recoveredLogin.body);
 
 await completeProfile(schedulerA, "Scheduler A", [{ dayOfWeek: 2, startTime: "17:00", endTime: "20:00" }]);
 await completeProfile(schedulerB, "Scheduler B", [{ dayOfWeek: 2, startTime: "18:00", endTime: "21:00" }]);
@@ -610,7 +616,13 @@ if (
   throw new Error("export account data: expected account identity and attachment filename");
 }
 const serializedExport = JSON.stringify(dataExport.body);
-for (const forbiddenField of ["passwordHash", "tokenHash", "refreshToken", "operationalIncident"]) {
+for (const forbiddenField of [
+  "passwordHash",
+  "tokenHash",
+  "refreshToken",
+  "authVersion",
+  "operationalIncident"
+]) {
   if (serializedExport.includes(forbiddenField)) {
     throw new Error(`export account data: included forbidden field ${forbiddenField}`);
   }
@@ -936,6 +948,17 @@ const reactivated = await request(`/v1/admin/users/${other.user.id}/status`, {
   body: JSON.stringify({ status: "ACTIVE", reason: "Smoke test complete" })
 });
 assertStatus("reactivate user", reactivated.status, 200);
+assertStatus(
+  "keep pre-suspension access token revoked after reactivation",
+  (await get("/v1/me", other.token)).status,
+  401
+);
+const reactivatedOtherLogin = await post("/v1/auth/login", {
+  email: other.user.email,
+  password
+});
+assertStatus("login after reactivation", reactivatedOtherLogin.status, 200);
+Object.assign(other, reactivatedOtherLogin.body);
 
 const reactivatedScheduler = await request(`/v1/admin/users/${schedulerB.user.id}/status`, {
   method: "PATCH",
@@ -943,6 +966,17 @@ const reactivatedScheduler = await request(`/v1/admin/users/${schedulerB.user.id
   body: JSON.stringify({ status: "ACTIVE", reason: "Active Rally suspension test complete" })
 });
 assertStatus("reactivate user after Rally cancellation", reactivatedScheduler.status, 200);
+assertStatus(
+  "keep pre-suspension scheduler token revoked after reactivation",
+  (await get("/v1/me", schedulerB.token)).status,
+  401
+);
+const reactivatedSchedulerLogin = await post("/v1/auth/login", {
+  email: schedulerB.user.email,
+  password
+});
+assertStatus("scheduler login after reactivation", reactivatedSchedulerLogin.status, 200);
+Object.assign(schedulerB, reactivatedSchedulerLogin.body);
 
 const normalAuditLogs = await get("/v1/admin/audit-logs", normal.token);
 assertStatus("normal audit log rejection", normalAuditLogs.status, 403);
@@ -1528,6 +1562,7 @@ console.log(JSON.stringify({
     "logout revocation",
     "HttpOnly browser refresh rotation and CSRF rejection",
     "single-use password recovery and session revocation",
+    "immediate access-token revocation across credential and status changes",
     "admin authorization",
     "real and test account data separation",
     "founder funnel and operational metrics",

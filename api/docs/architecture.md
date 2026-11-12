@@ -7,6 +7,7 @@ Rally does not scrape or automate Active Illini. The backend suggests the best s
 ## Core Domains
 
 - Auth: UIUC-only registration, versioned 18+/policy consent, Resend-backed verification and password recovery, login, short-lived JWT issuance, browser-bound HttpOnly refresh cookies, rotating refresh-token families with replay containment, and logout revocation.
+- Access revocation: every JWT carries a persisted authentication version; password resets and account-status transitions atomically advance it so older access tokens cannot revive.
 - Profile: campus identity, dating intent, gender preferences, trust profile.
 - Discovery profile: reviewed prompts, short interests, ordered photos and a privacy-shaped candidate response.
 - Sports: racket sport interests, skill, intensity, favorites.

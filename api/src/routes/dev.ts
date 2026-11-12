@@ -81,14 +81,19 @@ export async function devRoutes(app: FastifyInstance) {
         isTestAccount: true,
         profile: { profileComplete: true }
       },
-      select: { id: true, email: true, role: true }
+      select: { id: true, email: true, role: true, authVersion: true }
     });
 
     if (!user) {
       return reply.code(404).send({ error: "Profile not found" });
     }
 
-    const token = app.jwt.sign({ sub: user.id, email: user.email, role: user.role });
-    return { token, user };
+    const token = app.jwt.sign({
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      av: user.authVersion
+    });
+    return { token, user: { id: user.id, email: user.email, role: user.role } };
   });
 }

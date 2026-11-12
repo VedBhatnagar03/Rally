@@ -251,7 +251,7 @@ export async function meRoutes(app: FastifyInstance) {
       await runSerializableTransaction(async (tx) => {
         await tx.user.update({
           where: { id: user.id },
-          data: { status: "DEACTIVATED", deactivatedAt }
+          data: { status: "DEACTIVATED", deactivatedAt, authVersion: { increment: 1 } }
         });
         await tx.refreshToken.updateMany({
           where: { userId: user.id, revokedAt: null },
@@ -330,6 +330,7 @@ export async function meRoutes(app: FastifyInstance) {
               passwordHash: unusablePasswordHash,
               status: "DELETED",
               role: "USER",
+              authVersion: { increment: 1 },
               deletedAt,
               deactivatedAt: deletedAt
             }

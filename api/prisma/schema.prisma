@@ -108,6 +108,7 @@ model User {
   passwordHash String
   status       UserStatus @default(PENDING_EMAIL_VERIFICATION)
   role         UserRole   @default(USER)
+  authVersion  Int        @default(0)
   isTestAccount Boolean   @default(false)
   deactivatedAt DateTime?
   deletedAt     DateTime?

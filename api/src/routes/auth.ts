@@ -28,10 +28,15 @@ import {
 
 export async function authRoutes(app: FastifyInstance) {
   async function issueSession(
-    user: { id: string; email: string; role: "USER" | "ADMIN" },
+    user: { id: string; email: string; role: "USER" | "ADMIN"; authVersion: number },
     reply: FastifyReply
   ) {
-    const accessToken = app.jwt.sign({ sub: user.id, email: user.email, role: user.role });
+    const accessToken = app.jwt.sign({
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      av: user.authVersion
+    });
     const refreshToken = createOpaqueToken();
     const familyId = crypto.randomUUID();
 
@@ -48,7 +53,12 @@ export async function authRoutes(app: FastifyInstance) {
     ]);
 
     setRefreshCookie(reply, refreshToken);
-    return publicSession({ token: accessToken, accessToken, refreshToken, user });
+    return publicSession({
+      token: accessToken,
+      accessToken,
+      refreshToken,
+      user: { id: user.id, email: user.email, role: user.role }
+    });
   }
 
   app.post("/register", { config: { rateLimit: { max: 10, timeWindow: "1 hour" } } }, async (request, reply) => {
@@ -189,7 +199,8 @@ export async function authRoutes(app: FastifyInstance) {
       return issueSession({
         id: verification.userId,
         email: verification.user.email,
-        role: verification.user.role
+        role: verification.user.role,
+        authVersion: verification.user.authVersion
       }, reply);
     }
   );
@@ -223,7 +234,12 @@ export async function authRoutes(app: FastifyInstance) {
       request
     });
 
-      return issueSession({ id: user.id, email: user.email, role: user.role }, reply);
+      return issueSession({
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        authVersion: user.authVersion
+      }, reply);
     }
   );
 
@@ -305,7 +321,7 @@ export async function authRoutes(app: FastifyInstance) {
 
         await tx.user.update({
           where: { id: resetToken.user.id },
-          data: { passwordHash }
+          data: { passwordHash, authVersion: { increment: 1 } }
         });
         await tx.refreshToken.updateMany({
           where: { userId: resetToken.user.id, revokedAt: null },
@@ -339,7 +355,9 @@ export async function authRoutes(app: FastifyInstance) {
     const currentHash = hashToken(credential.token);
     const current = await prisma.refreshToken.findUnique({
       where: { tokenHash: currentHash },
-      include: { user: { select: { id: true, email: true, role: true, status: true } } }
+      include: {
+        user: { select: { id: true, email: true, role: true, status: true, authVersion: true } }
+      }
     });
 
     if (!current || current.user.status !== "ACTIVE") {
@@ -407,7 +425,8 @@ export async function authRoutes(app: FastifyInstance) {
     const accessToken = app.jwt.sign({
       sub: current.user.id,
       email: current.user.email,
-      role: current.user.role
+      role: current.user.role,
+      av: current.user.authVersion
     });
 
     await writeAuditLog({ userId: current.user.id, action: "auth.refresh", request });

@@ -101,6 +101,11 @@ browser credentials and an exact `Origin` from `CORS_ORIGIN`; refresh tokens are
 production JSON. Keep the frontend and API on same-site HTTPS origins so the cookie is sent without
 weakening its SameSite policy.
 
+Access tokens issued before migration `0020_access_token_auth_version` are intentionally rejected.
+Active users with a valid refresh cookie can obtain a replacement without signing in again. Password
+resets and account-status transitions increment the stored authentication version and revoke refresh
+tokens in the same transaction, immediately invalidating every older access credential.
+
 ## Deploy Procedure
 
 1. Confirm backend CI is green on the exact commit being deployed.

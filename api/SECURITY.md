@@ -8,7 +8,8 @@
 - Passwords hashed with Argon2id.
 - Verification tokens are opaque and stored only as SHA-256 hashes.
 - Password reset tokens are single-use, expire after one hour, and are stored only as SHA-256 hashes.
-- JWT access tokens are short-lived and carry only `sub` and `email`.
+- JWT access tokens are short-lived and carry only account identity, role, and authentication version claims.
+- Access tokens carry a database-checked authentication version and are invalidated immediately by password resets and account-status changes.
 - Browser refresh tokens use `Secure`, `HttpOnly`, `SameSite=Lax` cookies, remain absent from production JSON, and rotate on use.
 - Secrets live in environment variables and `.env` is ignored.
 - CORS is explicitly configured through `CORS_ORIGIN`.
