@@ -52,6 +52,7 @@ Rally does not scrape or automate Active Illini. The backend suggests the best s
 6. Protected requests re-check active user status so suspension takes effect immediately.
 7. Development session minting is limited to explicitly classified test accounts and remains unavailable in production.
 8. Production refresh credentials never appear in JSON; session issuance and cookie-backed refresh/logout requests require an exact configured frontend Origin.
+9. Every `/v1` response carries a no-store cache policy so token-bearing and private API responses are not retained by browsers or intermediaries.
 
 ## Matching V1
 

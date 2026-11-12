@@ -71,6 +71,15 @@ function assertStatus(name, actual, expected) {
   }
 }
 
+function assertPrivateApiCachePolicy(name, response) {
+  if (response.headers.get("cache-control") !== "no-store") {
+    throw new Error(`${name}: expected Cache-Control: no-store`);
+  }
+  if (response.headers.get("pragma") !== "no-cache") {
+    throw new Error(`${name}: expected Pragma: no-cache`);
+  }
+}
+
 async function adminAuditCount(action, metadataMatch) {
   const entries = await smokePrisma.auditLog.findMany({
     where: { userId: adminLogin.body.user.id, action },
@@ -245,6 +254,7 @@ if (
 
 const currentPolicy = await get("/v1/policies/current");
 assertStatus("current policy metadata", currentPolicy.status, 200);
+assertPrivateApiCachePolicy("current policy metadata", currentPolicy);
 currentPolicyVersion = currentPolicy.body.policy?.version;
 if (!currentPolicyVersion || currentPolicy.body.policy.minimumAge !== 18) {
   throw new Error("current policy metadata: expected version and 18+ minimum age");
@@ -286,6 +296,7 @@ const migratedConsent = await post(
   adminLogin.body.token
 );
 assertStatus("record existing-account policy consent", migratedConsent.status, 200);
+assertPrivateApiCachePolicy("record existing-account policy consent", migratedConsent);
 if (migratedConsent.body.consent.policyVersion !== currentPolicyVersion) {
   throw new Error("record existing-account policy consent: expected current policy version");
 }
@@ -1590,6 +1601,7 @@ console.log(JSON.stringify({
   checks: [
     "health",
     "ready",
+    "private API no-store cache policy",
     "versioned 18+ policy consent",
     "non-UIUC rejection",
     "privacy-safe catalog analytics ingestion",
