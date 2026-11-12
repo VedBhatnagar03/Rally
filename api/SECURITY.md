@@ -17,6 +17,7 @@
 - Global rate limiting is enabled.
 - Sensitive authentication routes have tighter per-route rate limits.
 - Request bodies are capped at 1 MB.
+- Every `/v1` response disables browser and intermediary storage with an explicit no-store cache policy.
 - Authentication events are written to `AuditLog`.
 - Unexpected 5xx failures create sanitized, admin-only operational incidents.
 - Sanitized incident alerts are HMAC-signed, idempotent, and retried from a durable outbox without user identity or raw request content.

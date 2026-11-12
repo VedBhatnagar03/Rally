@@ -120,6 +120,14 @@ export function buildApp() {
   });
   app.register(authenticate);
 
+  app.addHook("onSend", async (request, reply, payload) => {
+    if (request.url === "/v1" || request.url.startsWith("/v1/")) {
+      reply.header("cache-control", "no-store");
+      reply.header("pragma", "no-cache");
+    }
+    return payload;
+  });
+
   app.get("/health", async () => ({ ok: true, service: "rally-backend" }));
   app.get("/ready", async (request, reply) => {
     try {
