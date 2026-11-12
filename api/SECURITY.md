@@ -25,13 +25,13 @@
 - Blocks are enforced in discovery and direct Rally creation.
 - Prisma is the database access layer for request handlers.
 - `npm audit --audit-level=moderate` is part of verification.
+- Backend CI restores a PostgreSQL custom-format backup into a fresh database and runs the complete smoke suite against the restored copy.
 
 ## Must Do Before Production
 
 - Verify the production Resend sender domain and delivery path.
-- Add per-route abuse controls for auth endpoints.
 - Add centralized secret management.
-- Enable encrypted automated backups and test a restore using the runbook.
+- Enable provider-managed encrypted backups and point-in-time recovery, then complete the production-like restore drill in the runbook.
 - Monitor the scheduled incident-alert delivery worker and rotate its signing secret through the production secret manager.
 - Run and monitor the documented retention cleanup schedule; review dry-run counts before changing periods.
 - Publish reviewed privacy and community materials in the frontend before inviting beta users.
