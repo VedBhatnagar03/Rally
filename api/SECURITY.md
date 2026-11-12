@@ -22,6 +22,7 @@
 - Sanitized incident alerts are HMAC-signed, idempotent, and retried from a durable outbox without user identity or raw request content.
 - Founder-console routes require a current database-backed `ADMIN` role.
 - Authenticated users can export their own account data without token hashes or private reports about them.
+- Self-service deactivation and deletion commit account state, session revocation, Rally cancellation, and audit evidence atomically.
 - Blocks are enforced in discovery and direct Rally creation.
 - Prisma is the database access layer for request handlers.
 - `npm audit --audit-level=moderate` is part of verification.
