@@ -84,6 +84,9 @@ take the required backup before reducing any period.
 - `RESEND_API_KEY` and a verified `EMAIL_FROM` sender.
 - `ADMIN_EMAILS`: smallest possible founder/admin allowlist.
 - `DEV_TOOLS_ENABLED=false`.
+- `INCIDENT_ALERT_WEBHOOK_URL`: HTTPS endpoint for the restricted operations alert receiver.
+- `INCIDENT_ALERT_WEBHOOK_SECRET`: independently generated signing secret of at least 32 characters, shared only with the receiver.
+- `INCIDENT_ALERT_TIMEOUT_MS`: bounded delivery timeout; keep the reviewed default of `5000` unless the receiver contract requires less.
 
 Production startup rejects insecure frontend origins, the example JWT secret or Resend sender,
 an empty/non-UIUC admin allowlist, enabled development tools, missing photo/email credentials,
@@ -140,6 +143,17 @@ Run `/ready`, migration status, and the smoke suite against the restored environ
 - After recovery, run `/ready`, the golden-path smoke suite, and inspect open incidents before reopening traffic.
 
 ## Incident Response
+
+Run `npm run alerts:deliver` at least once per minute as a single scheduled job. New incidents also
+trigger a best-effort immediate delivery after they are persisted. Failed deliveries remain in the
+database and retry with a bounded exponential delay for up to ten attempts; the command exits
+unsuccessfully when a claimed delivery fails so the scheduler can alert on the alerting path itself.
+
+The receiver gets `operational_incident.created` with incident ID, request ID, method, route
+template, status code, error name/code, and timestamp only. It never gets user IDs, request bodies,
+headers, query strings, stack traces, or exception messages. Verify `x-rally-signature` as
+`sha256=` plus the HMAC-SHA256 hex digest of the exact request body, using a constant-time
+comparison. Deduplicate on `x-rally-event-id`; retries intentionally reuse the incident ID.
 
 1. Identify the request ID from the user report, structured server log, or admin incident feed.
 2. Check `/v1/admin/incidents?status=OPEN`; records intentionally exclude bodies, headers, stack traces, query strings, and exception messages.

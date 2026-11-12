@@ -24,6 +24,9 @@ const envSchema = z.object({
   AUDIT_LOG_RETENTION_DAYS: z.coerce.number().int().min(90).max(2555).default(365),
   RESOLVED_REPORT_RETENTION_DAYS: z.coerce.number().int().min(365).max(2555).default(730),
   RESOLVED_INCIDENT_RETENTION_DAYS: z.coerce.number().int().min(90).max(2555).default(365),
+  INCIDENT_ALERT_WEBHOOK_URL: optionalUrl,
+  INCIDENT_ALERT_WEBHOOK_SECRET: optionalSecret,
+  INCIDENT_ALERT_TIMEOUT_MS: z.coerce.number().int().min(500).max(15_000).default(5_000),
   PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
   POLICY_VERSION: z.string().trim().min(1).max(80).default("2026-10-12-beta"),
   RESEND_API_KEY: optionalSecret,
@@ -44,6 +47,20 @@ const envSchema = z.object({
     .default("false")
     .transform((value) => value === "true")
 }).superRefine((value, context) => {
+  if (Boolean(value.INCIDENT_ALERT_WEBHOOK_URL) !== Boolean(value.INCIDENT_ALERT_WEBHOOK_SECRET)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Incident alert webhook URL and signing secret must be configured together",
+      path: ["INCIDENT_ALERT_WEBHOOK_URL"]
+    });
+  }
+  if (value.INCIDENT_ALERT_WEBHOOK_SECRET && value.INCIDENT_ALERT_WEBHOOK_SECRET.length < 32) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "INCIDENT_ALERT_WEBHOOK_SECRET must contain at least 32 characters",
+      path: ["INCIDENT_ALERT_WEBHOOK_SECRET"]
+    });
+  }
   if (value.NODE_ENV === "production" && !value.RESEND_API_KEY) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
@@ -52,6 +69,28 @@ const envSchema = z.object({
     });
   }
   if (value.NODE_ENV === "production") {
+    if (!value.INCIDENT_ALERT_WEBHOOK_URL || !value.INCIDENT_ALERT_WEBHOOK_SECRET) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Incident alert webhook URL and signing secret are required in production",
+        path: ["INCIDENT_ALERT_WEBHOOK_URL"]
+      });
+    } else {
+      const alertUrl = new URL(value.INCIDENT_ALERT_WEBHOOK_URL);
+      if (
+        alertUrl.protocol !== "https:" ||
+        alertUrl.username !== "" ||
+        alertUrl.password !== "" ||
+        alertUrl.search !== "" ||
+        alertUrl.hash !== ""
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "INCIDENT_ALERT_WEBHOOK_URL must be a credential-free HTTPS URL without a query or fragment",
+          path: ["INCIDENT_ALERT_WEBHOOK_URL"]
+        });
+      }
+    }
     if (!value.REDIS_URL) {
       context.addIssue({
         code: z.ZodIssueCode.custom,

@@ -55,6 +55,8 @@ jobs:
       PHOTO_STORAGE_PUBLIC_BASE_URL: http://localhost:7070/rally-photos
       PHOTO_STORAGE_ACCESS_KEY: rally-local
       PHOTO_STORAGE_SECRET_KEY: rally-local-secret
+      INCIDENT_ALERT_WEBHOOK_URL: ""
+      INCIDENT_ALERT_WEBHOOK_SECRET: ""
     defaults:
       run:
         working-directory: api
