@@ -247,8 +247,22 @@ export async function meRoutes(app: FastifyInstance) {
     }
 
     const deactivatedAt = new Date();
+    let deactivated = false;
     try {
-      await runSerializableTransaction(async (tx) => {
+      deactivated = await runSerializableTransaction(async (tx) => {
+        const current = await tx.user.findUnique({
+          where: { id: user.id },
+          select: { status: true, role: true, passwordHash: true }
+        });
+        if (
+          !current ||
+          current.status !== "ACTIVE" ||
+          current.role === "ADMIN" ||
+          current.passwordHash !== user.passwordHash
+        ) {
+          return false;
+        }
+
         await tx.user.update({
           where: { id: user.id },
           data: { status: "DEACTIVATED", deactivatedAt, authVersion: { increment: 1 } }
@@ -258,6 +272,13 @@ export async function meRoutes(app: FastifyInstance) {
           data: { revokedAt: deactivatedAt, revokedReason: "ACCOUNT_CHANGE" }
         });
         await cancelActiveRalliesForUnavailableUser(tx, user.id, deactivatedAt);
+        await writeAuditLog({
+          userId: user.id,
+          action: "account.deactivate",
+          metadata: body.reason ? { reason: body.reason } : undefined,
+          request
+        }, tx);
+        return true;
       });
     } catch (error) {
       if (error instanceof SerializableTransactionExhaustedError) {
@@ -265,12 +286,9 @@ export async function meRoutes(app: FastifyInstance) {
       }
       throw error;
     }
-    await writeAuditLog({
-      userId: user.id,
-      action: "account.deactivate",
-      metadata: body.reason ? { reason: body.reason } : undefined,
-      request
-    });
+    if (!deactivated) {
+      return reply.code(409).send({ error: "Account state changed; sign in again before deactivating" });
+    }
 
     return { ok: true };
   });
@@ -307,6 +325,19 @@ export async function meRoutes(app: FastifyInstance) {
     }
     try {
       await runSerializableTransaction(async (tx) => {
+        const current = await tx.user.findUnique({
+          where: { id: user.id },
+          select: { status: true, role: true, passwordHash: true }
+        });
+        if (
+          !current ||
+          current.status === "DELETED" ||
+          current.role === "ADMIN" ||
+          current.passwordHash !== user.passwordHash
+        ) {
+          throw new AccountDeletionStateChangedError();
+        }
+
         await cancelActiveRalliesForUnavailableUser(tx, user.id, deletedAt);
         await Promise.all([
           tx.profile.deleteMany({ where: { userId: user.id } }),
@@ -334,17 +365,27 @@ export async function meRoutes(app: FastifyInstance) {
               deletedAt,
               deactivatedAt: deletedAt
             }
-          })
+          }),
+          writeAuditLog({ userId: user.id, action: "account.delete", request }, tx)
         ]);
       });
     } catch (error) {
+      if (error instanceof AccountDeletionStateChangedError) {
+        return reply.code(409).send({ error: "Account state changed; sign in again before deleting" });
+      }
       if (error instanceof SerializableTransactionExhaustedError) {
         return reply.code(503).send({ error: "Account deletion is temporarily unavailable" });
       }
       throw error;
     }
 
-    await writeAuditLog({ userId: user.id, action: "account.delete", request });
     return reply.code(204).send();
   });
+}
+
+class AccountDeletionStateChangedError extends Error {
+  constructor() {
+    super("Account state changed during deletion");
+    this.name = "AccountDeletionStateChangedError";
+  }
 }

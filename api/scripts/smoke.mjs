@@ -1058,6 +1058,12 @@ await assertNeutralCancellation(
   rallyCancelledByDeactivation.body.rally.id,
   raceB
 );
+const deactivationAudits = await smokePrisma.auditLog.count({
+  where: { userId: deactivating.user.id, action: "account.deactivate" }
+});
+if (deactivationAudits !== 1) {
+  throw new Error(`account deactivation: expected one atomic audit, got ${deactivationAudits}`);
+}
 
 const deletingPhoto = await uploadProfilePhoto(deleting);
 const rallyCancelledByDeletion = await post(
@@ -1089,6 +1095,12 @@ await assertNeutralCancellation(
   rallyCancelledByDeletion.body.rally.id,
   raceB
 );
+const deletionAudits = await smokePrisma.auditLog.count({
+  where: { userId: deleting.user.id, action: "account.delete" }
+});
+if (deletionAudits !== 1) {
+  throw new Error(`account deletion: expected one atomic audit, got ${deletionAudits}`);
+}
 
 const adminUsers = await get("/v1/admin/users?limit=100", adminLogin.body.token);
 assertStatus("admin user inspection", adminUsers.status, 200);
@@ -1605,7 +1617,7 @@ console.log(JSON.stringify({
     "serializable Rally creation and safety-action race containment",
     "privacy-safe participant-authorized Rally reads",
     "bounded participant-scoped Rally history",
-    "account deactivation, deletion, and unblock",
+    "atomic account deactivation, deletion, and unblock",
     "atomic active-Rally cancellation on account unavailability",
     "privacy-safe account data export",
     "sanitized profile photo upload and ownership",
