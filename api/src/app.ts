@@ -27,6 +27,7 @@ import { devRoutes } from "./routes/dev.js";
 import { InvalidEmailDomainError } from "./utils/email.js";
 import { describeOperationalIncident } from "./utils/operational-incident.js";
 import { deliverIncidentAlerts } from "./modules/operations/incident-alerts.js";
+import { SerializableTransactionExhaustedError } from "./db/serializable.js";
 
 export function buildApp() {
   const app = Fastify({
@@ -67,6 +68,11 @@ export function buildApp() {
 
     if (error instanceof InvalidEmailDomainError) {
       return reply.code(400).send({ error: error.message });
+    }
+
+    if (error instanceof SerializableTransactionExhaustedError) {
+      request.log.warn({ requestId: request.id }, "Serializable transaction retry limit reached");
+      return reply.code(503).send({ error: "Request is temporarily unavailable; retry shortly" });
     }
 
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
@@ -115,7 +121,15 @@ export function buildApp() {
   app.register(jwt, {
     secret: env.JWT_SECRET,
     sign: {
-      expiresIn: env.JWT_EXPIRES_IN
+      expiresIn: env.JWT_EXPIRES_IN,
+      algorithm: "HS256",
+      iss: env.JWT_ISSUER,
+      aud: env.JWT_AUDIENCE
+    },
+    verify: {
+      algorithms: ["HS256"],
+      allowedIss: env.JWT_ISSUER,
+      allowedAud: env.JWT_AUDIENCE
     }
   });
   app.register(authenticate);

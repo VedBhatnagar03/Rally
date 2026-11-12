@@ -41,20 +41,23 @@ export async function meRoutes(app: FastifyInstance) {
     }
 
     const acceptedAt = new Date();
-    const user = await prisma.user.update({
-      where: { id: request.user.sub },
-      data: {
-        ageAttestedAt: acceptedAt,
-        policyAcceptedAt: acceptedAt,
-        policyVersion: env.POLICY_VERSION
-      },
-      select: { ageAttestedAt: true, policyAcceptedAt: true, policyVersion: true }
-    });
-    await writeAuditLog({
-      userId: request.user.sub,
-      action: "account.policy_consent",
-      metadata: { policyVersion: env.POLICY_VERSION },
-      request
+    const user = await prisma.$transaction(async (tx) => {
+      const consent = await tx.user.update({
+        where: { id: request.user.sub },
+        data: {
+          ageAttestedAt: acceptedAt,
+          policyAcceptedAt: acceptedAt,
+          policyVersion: env.POLICY_VERSION
+        },
+        select: { ageAttestedAt: true, policyAcceptedAt: true, policyVersion: true }
+      });
+      await writeAuditLog({
+        userId: request.user.sub,
+        action: "account.policy_consent",
+        metadata: { policyVersion: env.POLICY_VERSION },
+        request
+      }, tx);
+      return consent;
     });
     return { consent: user };
   });

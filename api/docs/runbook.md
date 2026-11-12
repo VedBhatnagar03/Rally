@@ -76,7 +76,7 @@ take the required backup before reducing any period.
 ## Required Production Configuration
 
 - `NODE_ENV=production`
-- `DATABASE_URL`: TLS-protected production PostgreSQL URL.
+- `DATABASE_URL`: production PostgreSQL URL with `sslmode=require`, `verify-ca`, or `verify-full`.
 - `RATE_LIMIT_MAX`: global per-minute client-IP ceiling. Keep the production value at the reviewed default of `120`; CI uses a higher value only because its full smoke journey originates from one process and IP.
 - `*_RETENTION_DAYS`: reviewed data-retention periods documented above. Production validation rejects values outside the safe beta bounds.
 - `JWT_SECRET`: independently generated secret of at least 32 characters.

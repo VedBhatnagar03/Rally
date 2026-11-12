@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "check": "npm run prisma:generate && npm run lint && npm run build && npm test && npm audit --audit-level=moderate",
-    "check:web": "npm install --prefix web && npm run check --prefix web",
+    "check:web": "npm install --prefix .. && npm run check --prefix ..",
     "smoke": "node scripts/smoke.mjs",
     "test": "vitest run",
     "lint": "eslint .",

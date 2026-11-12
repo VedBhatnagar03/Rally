@@ -11,6 +11,7 @@ import sharp from "sharp";
 import { env } from "../../config/env.js";
 
 const uploadLifetimeSeconds = 10 * 60;
+const maximumDecodedPixels = 40_000_000;
 
 function storageConfig() {
   if (
@@ -93,7 +94,10 @@ export async function processPhotoObject(input: {
   );
   if (!source.Body) throw new Error("Uploaded photo is empty");
   const bytes = await source.Body.transformToByteArray();
-  const sanitized = await sharp(bytes)
+  const sanitized = await sharp(bytes, {
+    failOn: "warning",
+    limitInputPixels: maximumDecodedPixels
+  })
     .rotate()
     .resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true })
     .webp({ quality: 85 })

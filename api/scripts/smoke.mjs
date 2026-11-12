@@ -80,6 +80,19 @@ function assertPrivateApiCachePolicy(name, response) {
   }
 }
 
+function decodeJwtSegment(segment) {
+  return JSON.parse(Buffer.from(segment, "base64url").toString("utf8"));
+}
+
+function assertJwtTrustBoundary(name, token) {
+  const [encodedHeader, encodedPayload] = token.split(".");
+  const header = decodeJwtSegment(encodedHeader);
+  const payload = decodeJwtSegment(encodedPayload);
+  if (header.alg !== "HS256" || payload.iss !== "rally-api" || payload.aud !== "rally-web") {
+    throw new Error(`${name}: expected pinned HS256 issuer and audience claims`);
+  }
+}
+
 async function adminAuditCount(action, metadataMatch) {
   const entries = await smokePrisma.auditLog.findMany({
     where: { userId: adminLogin.body.user.id, action },
@@ -289,6 +302,7 @@ const adminLogin = await post("/v1/auth/login", {
   password
 });
 assertStatus("admin login", adminLogin.status, 200);
+assertJwtTrustBoundary("admin login", adminLogin.body.token);
 
 const migratedConsent = await post(
   "/v1/me/policy-consent",
@@ -1602,6 +1616,7 @@ console.log(JSON.stringify({
     "health",
     "ready",
     "private API no-store cache policy",
+    "issuer-bound HS256 access tokens",
     "versioned 18+ policy consent",
     "non-UIUC rejection",
     "privacy-safe catalog analytics ingestion",

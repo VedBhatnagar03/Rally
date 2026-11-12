@@ -8,6 +8,8 @@ Rally does not scrape or automate Active Illini. The backend suggests the best s
 
 - Auth: UIUC-only registration, versioned 18+/policy consent, concurrency-safe single-use email verification and password recovery, Resend-backed email delivery, login, short-lived JWT issuance, browser-bound HttpOnly refresh cookies, rotating refresh-token families with replay containment, and logout revocation.
 - Access revocation: every JWT carries a persisted authentication version; password resets and account-status transitions atomically advance it so older access tokens cannot revive.
+- Token trust boundary: access tokens are accepted only with the pinned HS256 algorithm and Rally API issuer/web audience claims.
+- Session integrity: refresh rotation, replay containment, logout revocation, and their audit evidence share serializable transactions.
 - Account lifecycle: self-service deactivation and deletion revalidate account state inside serializable transactions and commit security audit evidence with the transition.
 - Profile: campus identity, dating intent, gender preferences, trust profile.
 - Discovery profile: reviewed prompts, short interests, ordered photos and a privacy-shaped candidate response.
@@ -40,7 +42,7 @@ Rally does not scrape or automate Active Illini. The backend suggests the best s
 - Post-Rally safety: a negative safety response creates a confidential, idempotent founder-queue report linked to the feedback record.
 - Feedback integrity: the first post-Rally decision is final; exact retries succeed while conflicting resubmissions are rejected.
 - Notifications: durable in-app lifecycle events are created in the same transaction as Rally state changes and deduplicated per recipient, event type and Rally. Safety-triggered cancellations notify both participants with the same neutral event.
-- Profile photos: clients upload to a short-lived private S3-compatible target; the API validates and re-encodes images before publishing owner-bound assets.
+- Profile photos: clients upload to a short-lived private S3-compatible target; rate-limited finalization rejects oversized decoded pixel surfaces and re-encodes images before publishing owner-bound assets.
 
 ## Request Flow
 
@@ -53,6 +55,7 @@ Rally does not scrape or automate Active Illini. The backend suggests the best s
 7. Development session minting is limited to explicitly classified test accounts and remains unavailable in production.
 8. Production refresh credentials never appear in JSON; session issuance and cookie-backed refresh/logout requests require an exact configured frontend Origin.
 9. Every `/v1` response carries a no-store cache policy so token-bearing and private API responses are not retained by browsers or intermediaries.
+10. Registration and login session creation commit their authentication audit records in the same database transaction.
 
 ## Matching V1
 

@@ -19,6 +19,8 @@ const envSchema = z.object({
   RATE_LIMIT_MAX: z.coerce.number().int().min(10).max(10_000).default(120),
   JWT_SECRET: z.string().min(32),
   JWT_EXPIRES_IN: z.string().default("15m"),
+  JWT_ISSUER: z.string().trim().min(1).max(120).default("rally-api"),
+  JWT_AUDIENCE: z.string().trim().min(1).max(120).default("rally-web"),
   REFRESH_TOKEN_DAYS: z.coerce.number().int().min(1).max(90).default(30),
   ANALYTICS_RETENTION_DAYS: z.coerce.number().int().min(30).max(730).default(90),
   AUDIT_LOG_RETENTION_DAYS: z.coerce.number().int().min(90).max(2555).default(365),
@@ -69,6 +71,17 @@ const envSchema = z.object({
     });
   }
   if (value.NODE_ENV === "production") {
+    const databaseUrl = new URL(value.DATABASE_URL);
+    if (
+      !["postgres:", "postgresql:"].includes(databaseUrl.protocol) ||
+      !["require", "verify-ca", "verify-full"].includes(databaseUrl.searchParams.get("sslmode") ?? "")
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "DATABASE_URL must require TLS for production PostgreSQL",
+        path: ["DATABASE_URL"]
+      });
+    }
     if (!value.INCIDENT_ALERT_WEBHOOK_URL || !value.INCIDENT_ALERT_WEBHOOK_SECRET) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
