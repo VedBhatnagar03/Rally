@@ -12,10 +12,10 @@ export default fp(async (app) => {
 
     const user = await prisma.user.findUnique({
       where: { id: request.user.sub },
-      select: { status: true, lastActiveAt: true }
+      select: { status: true, authVersion: true, lastActiveAt: true }
     });
 
-    if (!user || user.status !== "ACTIVE") {
+    if (!user || user.status !== "ACTIVE" || request.user.av !== user.authVersion) {
       return reply.code(401).send({ error: "Unauthorized" });
     }
 
