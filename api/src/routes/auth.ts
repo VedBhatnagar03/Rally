@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { adminEmails } from "../config/env.js";
 import { prisma } from "../db/prisma.js";
+import { runSerializableTransaction } from "../db/serializable.js";
 import {
   forgotPasswordSchema,
   loginSchema,
@@ -122,34 +123,37 @@ export async function authRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const body = resendVerificationSchema.parse(request.body);
       const email = normalizeEmail(body.email);
-      const user = await prisma.user.findUnique({
-        where: { email },
-        select: { id: true, email: true, status: true }
+      let devVerificationToken: string | undefined;
+      const token = createOpaqueToken();
+      const result = await runSerializableTransaction(async (tx) => {
+        const user = await tx.user.findUnique({
+          where: { email },
+          select: { id: true, email: true, status: true }
+        });
+        if (user?.status !== "PENDING_EMAIL_VERIFICATION") return null;
+
+        await tx.emailVerificationToken.updateMany({
+          where: { userId: user.id, consumedAt: null },
+          data: { consumedAt: new Date() }
+        });
+        const created = await tx.emailVerificationToken.create({
+          data: {
+            userId: user.id,
+            tokenHash: hashToken(token),
+            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
+          }
+        });
+
+        await writeAuditLog({ userId: user.id, action: "auth.resend_verification", request }, tx);
+        return { user, created };
       });
 
-      let devVerificationToken: string | undefined;
-      if (user?.status === "PENDING_EMAIL_VERIFICATION") {
-        const token = createOpaqueToken();
-        const created = await prisma.$transaction(async (tx) => {
-          await tx.emailVerificationToken.updateMany({
-            where: { userId: user.id, consumedAt: null },
-            data: { consumedAt: new Date() }
-          });
-          return tx.emailVerificationToken.create({
-            data: {
-              userId: user.id,
-              tokenHash: hashToken(token),
-              expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
-            }
-          });
-        });
-
+      if (result) {
         await sendVerificationEmail({
-          email: user.email,
+          email: result.user.email,
           token,
-          idempotencyKey: `verify-resend/${created.id}`
+          idempotencyKey: `verify-resend/${result.created.id}`
         });
-        await writeAuditLog({ userId: user.id, action: "auth.resend_verification", request });
         devVerificationToken = env.NODE_ENV === "production" ? undefined : token;
       }
 
@@ -170,38 +174,52 @@ export async function authRoutes(app: FastifyInstance) {
     const body = verifyEmailSchema.parse(request.body);
     const tokenHash = hashToken(body.token);
 
-    const verification = await prisma.emailVerificationToken.findUnique({
-      where: { tokenHash },
-      include: { user: true }
-    });
+    const verifiedUser = await runSerializableTransaction(async (tx) => {
+      const verification = await tx.emailVerificationToken.findUnique({
+        where: { tokenHash },
+        include: { user: true }
+      });
+      const now = new Date();
+      if (
+        !verification ||
+        verification.consumedAt ||
+        verification.expiresAt <= now ||
+        verification.user.status !== "PENDING_EMAIL_VERIFICATION"
+      ) {
+        return null;
+      }
 
-    if (!verification || verification.consumedAt || verification.expiresAt < new Date()) {
-      return reply.code(400).send({ error: "Invalid or expired verification token" });
-    }
+      const consumed = await tx.emailVerificationToken.updateMany({
+        where: { id: verification.id, consumedAt: null, expiresAt: { gt: now } },
+        data: { consumedAt: now }
+      });
+      if (consumed.count !== 1) return null;
 
-    await prisma.$transaction([
-      prisma.user.update({
-        where: { id: verification.userId },
+      const activated = await tx.user.updateMany({
+        where: { id: verification.userId, status: "PENDING_EMAIL_VERIFICATION" },
         data: { status: "ACTIVE" }
-      }),
-      prisma.emailVerificationToken.update({
-        where: { id: verification.id },
-        data: { consumedAt: new Date() }
-      })
-    ]);
+      });
+      if (activated.count !== 1) return null;
 
-    await writeAuditLog({
-      userId: verification.userId,
-      action: "auth.verify_email",
-      request
-    });
+      await writeAuditLog({
+        userId: verification.userId,
+        action: "auth.verify_email",
+        request
+      }, tx);
 
-      return issueSession({
+      return {
         id: verification.userId,
         email: verification.user.email,
         role: verification.user.role,
         authVersion: verification.user.authVersion
-      }, reply);
+      };
+    });
+
+    if (!verifiedUser) {
+      return reply.code(400).send({ error: "Invalid or expired verification token" });
+    }
+
+      return issueSession(verifiedUser, reply);
     }
   );
 

@@ -93,7 +93,7 @@ function dateTimeForSuggestion(suggestion, time) {
   return `${nextDateForDay(suggestion.dayOfWeek)}T${time}:00.000Z`;
 }
 
-async function createVerifiedUser(prefix, testResend = false) {
+async function createVerifiedUser(prefix, testResend = false, testConcurrentVerification = false) {
   const email = `${prefix}.${Date.now()}@illinois.edu`;
   const registration = await post("/v1/auth/register", {
     email,
@@ -116,12 +116,34 @@ async function createVerifiedUser(prefix, testResend = false) {
     verificationToken = resent.body.devVerificationToken;
   }
 
-  const verification = await post("/v1/auth/verify-email", {
-    token: verificationToken
-  });
+  const verification = testConcurrentVerification
+    ? await verifyConcurrently(prefix, email, verificationToken)
+    : await post("/v1/auth/verify-email", { token: verificationToken });
   assertStatus(`${prefix} verify`, verification.status, 200);
 
   return verification.body;
+}
+
+async function verifyConcurrently(prefix, email, token) {
+  const attempts = await Promise.all([
+    post("/v1/auth/verify-email", { token }),
+    post("/v1/auth/verify-email", { token })
+  ]);
+  const statuses = attempts.map(({ status }) => status).sort();
+  if (statuses[0] !== 200 || statuses[1] !== 400) {
+    throw new Error(`${prefix} verification race: expected one 200 and one 400, got ${statuses.join(", ")}`);
+  }
+
+  const user = await smokePrisma.user.findUniqueOrThrow({ where: { email }, select: { id: true } });
+  const [refreshTokens, audits] = await Promise.all([
+    smokePrisma.refreshToken.count({ where: { userId: user.id, revokedAt: null } }),
+    smokePrisma.auditLog.count({ where: { userId: user.id, action: "auth.verify_email" } })
+  ]);
+  if (refreshTokens !== 1 || audits !== 1) {
+    throw new Error(`${prefix} verification race: expected one session and audit, got ${refreshTokens} and ${audits}`);
+  }
+
+  return attempts.find(({ status }) => status === 200);
 }
 
 async function completeProfile(userSession, displayName, availability) {
@@ -341,7 +363,7 @@ if (!/Max-Age=0/i.test(browserLogout.headers.get("set-cookie") ?? "")) {
   throw new Error("clear browser refresh cookie: expected immediate cookie expiry");
 }
 
-const normal = await createVerifiedUser("normal", true);
+const normal = await createVerifiedUser("normal", true, true);
 const other = await createVerifiedUser("other");
 const deactivating = await createVerifiedUser("deactivating");
 const deleting = await createVerifiedUser("deleting");
@@ -1557,6 +1579,7 @@ console.log(JSON.stringify({
     "non-UIUC rejection",
     "privacy-safe catalog analytics ingestion",
     "verification resend and superseded-token rejection",
+    "single-use email verification under concurrency",
     "refresh rotation and replay rejection",
     "refresh-token family replay containment",
     "logout revocation",
