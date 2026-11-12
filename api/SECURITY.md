@@ -18,6 +18,7 @@
 - Request bodies are capped at 1 MB.
 - Authentication events are written to `AuditLog`.
 - Unexpected 5xx failures create sanitized, admin-only operational incidents.
+- Sanitized incident alerts are HMAC-signed, idempotent, and retried from a durable outbox without user identity or raw request content.
 - Founder-console routes require a current database-backed `ADMIN` role.
 - Authenticated users can export their own account data without token hashes or private reports about them.
 - Blocks are enforced in discovery and direct Rally creation.
@@ -30,7 +31,7 @@
 - Add per-route abuse controls for auth endpoints.
 - Add centralized secret management.
 - Enable encrypted automated backups and test a restore using the runbook.
-- Add external alert delivery for new operational incidents.
+- Monitor the scheduled incident-alert delivery worker and rotate its signing secret through the production secret manager.
 - Run and monitor the documented retention cleanup schedule; review dry-run counts before changing periods.
 - Publish reviewed privacy and community materials in the frontend before inviting beta users.
 

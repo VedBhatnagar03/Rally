@@ -16,7 +16,9 @@ const productionEnv = {
   CORS_ORIGIN: "https://rally.example.com",
   TRUST_PROXY_HOPS: "1",
   ADMIN_EMAILS: "founder@illinois.edu",
-  DEV_TOOLS_ENABLED: "false"
+  DEV_TOOLS_ENABLED: "false",
+  INCIDENT_ALERT_WEBHOOK_URL: "https://alerts.rally.example.com/incidents",
+  INCIDENT_ALERT_WEBHOOK_SECRET: "a-production-alert-secret-long-enough"
 };
 
 describe("environment validation", () => {
@@ -42,7 +44,12 @@ describe("environment validation", () => {
     ["missing shared rate-limit store", { REDIS_URL: "" }],
     ["unencrypted rate-limit store", { REDIS_URL: "redis://cache.example.com:6379" }],
     ["example JWT secret", { JWT_SECRET: "replace-with-at-least-32-random-characters" }],
-    ["example email sender", { EMAIL_FROM: "Rally <onboarding@resend.dev>" }]
+    ["example email sender", { EMAIL_FROM: "Rally <onboarding@resend.dev>" }],
+    ["missing incident alert URL", { INCIDENT_ALERT_WEBHOOK_URL: "" }],
+    ["insecure incident alert URL", { INCIDENT_ALERT_WEBHOOK_URL: "http://alerts.example.com" }],
+    ["credentialed incident alert URL", { INCIDENT_ALERT_WEBHOOK_URL: "https://user:secret@alerts.example.com" }],
+    ["incident alert URL query", { INCIDENT_ALERT_WEBHOOK_URL: "https://alerts.example.com/hook?secret=value" }],
+    ["weak incident alert secret", { INCIDENT_ALERT_WEBHOOK_SECRET: "too-short" }]
   ])("rejects production with %s", (_name, override) => {
     expect(() => parseEnv({ ...productionEnv, ...override })).toThrow();
   });

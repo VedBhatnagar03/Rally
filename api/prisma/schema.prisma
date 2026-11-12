@@ -436,8 +436,14 @@ model OperationalIncident {
   resolvedAt     DateTime?
   resolutionNote String?
   resolvedById   String?
+  alertDeliveredAt DateTime?
+  alertAttempts    Int       @default(0)
+  alertLastAttemptAt DateTime?
+  alertNextAttemptAt DateTime?
+  alertLastError   String?
   createdAt      DateTime  @default(now())
 
   @@index([resolvedAt, createdAt])
   @@index([errorName, createdAt])
+  @@index([alertDeliveredAt, alertNextAttemptAt, alertAttempts])
 }

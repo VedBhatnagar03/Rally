@@ -19,7 +19,8 @@
     "seed": "tsx prisma/seed.ts",
     "storage:init": "tsx scripts/init-photo-storage.ts",
     "cleanup:expired": "node dist/maintenance/cleanup-expired.js",
-    "cleanup:expired:dry-run": "node dist/maintenance/cleanup-expired.js --dry-run"
+    "cleanup:expired:dry-run": "node dist/maintenance/cleanup-expired.js --dry-run",
+    "alerts:deliver": "node dist/maintenance/deliver-incident-alerts.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1150.0",
