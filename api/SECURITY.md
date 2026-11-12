@@ -7,7 +7,7 @@
 - Email verification required before login.
 - Passwords hashed with Argon2id.
 - Verification tokens are opaque, stored only as SHA-256 hashes, and consumed once with concurrency-safe activation.
-- Password reset tokens are single-use, expire after one hour, and are stored only as SHA-256 hashes.
+- Password reset tokens are single-use under concurrency, expire after one hour, and are stored only as SHA-256 hashes.
 - JWT access tokens are short-lived and carry only account identity, role, and authentication version claims.
 - Access tokens carry a database-checked authentication version and are invalidated immediately by password resets and account-status changes.
 - Browser refresh tokens use `Secure`, `HttpOnly`, `SameSite=Lax` cookies, remain absent from production JSON, and rotate on use.

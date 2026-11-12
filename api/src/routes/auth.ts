@@ -1,7 +1,10 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { adminEmails } from "../config/env.js";
 import { prisma } from "../db/prisma.js";
-import { runSerializableTransaction } from "../db/serializable.js";
+import {
+  runSerializableTransaction,
+  SerializableTransactionExhaustedError
+} from "../db/serializable.js";
 import {
   forgotPasswordSchema,
   loginSchema,
@@ -267,34 +270,44 @@ export async function authRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const body = forgotPasswordSchema.parse(request.body);
       const email = normalizeEmail(body.email);
-      const user = await prisma.user.findUnique({
-        where: { email },
-        select: { id: true, email: true, status: true }
-      });
-
       let devResetToken: string | undefined;
-      if (user?.status === "ACTIVE") {
-        const token = createOpaqueToken();
-        const created = await prisma.$transaction(async (tx) => {
+      const token = createOpaqueToken();
+      let result;
+      try {
+        result = await runSerializableTransaction(async (tx) => {
+          const user = await tx.user.findUnique({
+            where: { email },
+            select: { id: true, email: true, status: true }
+          });
+          if (user?.status !== "ACTIVE") return null;
+
           await tx.passwordResetToken.updateMany({
             where: { userId: user.id, consumedAt: null },
             data: { consumedAt: new Date() }
           });
-          return tx.passwordResetToken.create({
+          const created = await tx.passwordResetToken.create({
             data: {
               userId: user.id,
               tokenHash: hashToken(token),
               expiresAt: new Date(Date.now() + 60 * 60 * 1000)
             }
           });
+          await writeAuditLog({ userId: user.id, action: "auth.password_reset_requested", request }, tx);
+          return { user, created };
         });
+      } catch (error) {
+        if (error instanceof SerializableTransactionExhaustedError) {
+          return reply.code(503).send({ error: "Password recovery is temporarily unavailable" });
+        }
+        throw error;
+      }
 
+      if (result) {
         await sendPasswordResetEmail({
-          email: user.email,
+          email: result.user.email,
           token,
-          idempotencyKey: `password-reset/${created.id}`
+          idempotencyKey: `password-reset/${result.created.id}`
         });
-        await writeAuditLog({ userId: user.id, action: "auth.password_reset_requested", request });
         devResetToken = env.NODE_ENV === "production" ? undefined : token;
       }
 
@@ -330,29 +343,58 @@ export async function authRoutes(app: FastifyInstance) {
       }
 
       const passwordHash = await hashPassword(body.password);
-      const reset = await prisma.$transaction(async (tx) => {
-        const consumed = await tx.passwordResetToken.updateMany({
-          where: { id: resetToken.id, consumedAt: null, expiresAt: { gt: new Date() } },
-          data: { consumedAt: new Date() }
-        });
-        if (consumed.count !== 1) return false;
+      let reset;
+      try {
+        reset = await runSerializableTransaction(async (tx) => {
+          const current = await tx.passwordResetToken.findUnique({
+            where: { id: resetToken.id },
+            include: { user: { select: { id: true, passwordHash: true, status: true } } }
+          });
+          const now = new Date();
+          if (
+            !current ||
+            current.consumedAt ||
+            current.expiresAt <= now ||
+            current.user.status !== "ACTIVE" ||
+            current.user.passwordHash !== resetToken.user.passwordHash
+          ) {
+            return false;
+          }
 
-        await tx.user.update({
-          where: { id: resetToken.user.id },
-          data: { passwordHash, authVersion: { increment: 1 } }
+          const consumed = await tx.passwordResetToken.updateMany({
+            where: { id: current.id, consumedAt: null, expiresAt: { gt: now } },
+            data: { consumedAt: now }
+          });
+          if (consumed.count !== 1) return false;
+
+          const updated = await tx.user.updateMany({
+            where: {
+              id: current.user.id,
+              status: "ACTIVE",
+              passwordHash: current.user.passwordHash
+            },
+            data: { passwordHash, authVersion: { increment: 1 } }
+          });
+          if (updated.count !== 1) return false;
+
+          await tx.refreshToken.updateMany({
+            where: { userId: current.user.id, revokedAt: null },
+            data: { revokedAt: now, revokedReason: "PASSWORD_RESET" }
+          });
+          await writeAuditLog({ userId: current.user.id, action: "auth.password_reset", request }, tx);
+          return true;
         });
-        await tx.refreshToken.updateMany({
-          where: { userId: resetToken.user.id, revokedAt: null },
-          data: { revokedAt: new Date(), revokedReason: "PASSWORD_RESET" }
-        });
-        return true;
-      });
+      } catch (error) {
+        if (error instanceof SerializableTransactionExhaustedError) {
+          return reply.code(503).send({ error: "Password recovery is temporarily unavailable" });
+        }
+        throw error;
+      }
 
       if (!reset) {
         return reply.code(400).send({ error: "Invalid or expired password reset token" });
       }
 
-      await writeAuditLog({ userId: resetToken.user.id, action: "auth.password_reset", request });
       return reply.code(204).send();
     }
   );

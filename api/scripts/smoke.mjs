@@ -419,17 +419,20 @@ const reusedPassword = await post("/v1/auth/reset-password", {
 assertStatus("reject reused password", reusedPassword.status, 400);
 
 const recoveredPassword = "new-correct-horse-battery-staple";
-const passwordReset = await post("/v1/auth/reset-password", {
-  token: recovery.body.devResetToken,
-  password: recoveredPassword
+const concurrentResets = await Promise.all([
+  post("/v1/auth/reset-password", { token: recovery.body.devResetToken, password: recoveredPassword }),
+  post("/v1/auth/reset-password", { token: recovery.body.devResetToken, password: recoveredPassword })
+]);
+const resetStatuses = concurrentResets.map(({ status }) => status).sort();
+if (resetStatuses[0] !== 204 || resetStatuses[1] !== 400) {
+  throw new Error(`concurrent password reset: expected one 204 and one 400, got ${resetStatuses.join(", ")}`);
+}
+const passwordResetAudits = await smokePrisma.auditLog.count({
+  where: { userId: normal.user.id, action: "auth.password_reset" }
 });
-assertStatus("reset password", passwordReset.status, 204);
-
-const resetReplay = await post("/v1/auth/reset-password", {
-  token: recovery.body.devResetToken,
-  password: "another-correct-horse-battery-staple"
-});
-assertStatus("reject reset token replay", resetReplay.status, 400);
+if (passwordResetAudits !== 1) {
+  throw new Error(`concurrent password reset: expected one audit, got ${passwordResetAudits}`);
+}
 
 const revokedByReset = await post("/v1/auth/refresh", { refreshToken: normal.refreshToken });
 assertStatus("revoke sessions after password reset", revokedByReset.status, 401);
@@ -1584,7 +1587,7 @@ console.log(JSON.stringify({
     "refresh-token family replay containment",
     "logout revocation",
     "HttpOnly browser refresh rotation and CSRF rejection",
-    "single-use password recovery and session revocation",
+    "concurrency-safe password recovery and session revocation",
     "immediate access-token revocation across credential and status changes",
     "admin authorization",
     "real and test account data separation",
