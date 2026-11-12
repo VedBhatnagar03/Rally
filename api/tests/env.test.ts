@@ -3,7 +3,7 @@ import { parseEnv } from "../src/config/env.js";
 
 const productionEnv = {
   NODE_ENV: "production",
-  DATABASE_URL: "postgresql://rally:password@db.example.com:5432/rally",
+  DATABASE_URL: "postgresql://rally:password@db.example.com:5432/rally?sslmode=require",
   REDIS_URL: "rediss://cache.example.com:6380",
   JWT_SECRET: "a-production-only-secret-that-is-long-enough",
   PUBLIC_APP_URL: "https://rally.example.com",
@@ -27,6 +27,8 @@ describe("environment validation", () => {
     expect(parsed.NODE_ENV).toBe("production");
     expect(parsed.TRUST_PROXY_HOPS).toBe(1);
     expect(parsed.DEV_TOOLS_ENABLED).toBe(false);
+    expect(parsed.JWT_ISSUER).toBe("rally-api");
+    expect(parsed.JWT_AUDIENCE).toBe("rally-web");
     expect(parsed.ANALYTICS_RETENTION_DAYS).toBe(90);
     expect(parsed.RESOLVED_REPORT_RETENTION_DAYS).toBe(730);
   });
@@ -43,6 +45,8 @@ describe("environment validation", () => {
     ["missing trusted proxy boundary", { TRUST_PROXY_HOPS: "0" }],
     ["missing shared rate-limit store", { REDIS_URL: "" }],
     ["unencrypted rate-limit store", { REDIS_URL: "redis://cache.example.com:6379" }],
+    ["unencrypted database", { DATABASE_URL: "postgresql://rally:password@db.example.com:5432/rally" }],
+    ["disabled database TLS", { DATABASE_URL: "postgresql://rally:password@db.example.com:5432/rally?sslmode=disable" }],
     ["example JWT secret", { JWT_SECRET: "replace-with-at-least-32-random-characters" }],
     ["example email sender", { EMAIL_FROM: "Rally <onboarding@resend.dev>" }],
     ["missing incident alert URL", { INCIDENT_ALERT_WEBHOOK_URL: "" }],

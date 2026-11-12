@@ -22,7 +22,10 @@ class PhotoLimitError extends Error {}
 class UploadUnavailableError extends Error {}
 
 export async function photoRoutes(app: FastifyInstance) {
-  app.post("/upload-intents", { preHandler: app.authenticate }, async (request, reply) => {
+  app.post("/upload-intents", {
+    preHandler: app.authenticate,
+    config: { rateLimit: { max: 12, timeWindow: "1 minute" } }
+  }, async (request, reply) => {
     const body = photoUploadIntentSchema.parse(request.body);
     const [photoCount, pendingCount] = await Promise.all([
       prisma.photo.count({ where: { userId: request.user.sub } }),
@@ -51,7 +54,10 @@ export async function photoRoutes(app: FastifyInstance) {
 
   app.post(
     "/upload-intents/:uploadId/complete",
-    { preHandler: app.authenticate },
+    {
+      preHandler: app.authenticate,
+      config: { rateLimit: { max: 10, timeWindow: "1 minute" } }
+    },
     async (request, reply) => {
       const { uploadId } = photoUploadParamsSchema.parse(request.params);
       const upload = await prisma.photoUpload.findFirst({

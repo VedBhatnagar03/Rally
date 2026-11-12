@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { adminEmails } from "../config/env.js";
 import { prisma } from "../db/prisma.js";
 import {
@@ -33,7 +33,9 @@ import {
 export async function authRoutes(app: FastifyInstance) {
   async function issueSession(
     user: { id: string; email: string; role: "USER" | "ADMIN"; authVersion: number },
-    reply: FastifyReply
+    reply: FastifyReply,
+    request?: FastifyRequest,
+    auditAction?: string
   ) {
     const accessToken = app.jwt.sign({
       sub: user.id,
@@ -44,17 +46,37 @@ export async function authRoutes(app: FastifyInstance) {
     const refreshToken = createOpaqueToken();
     const familyId = crypto.randomUUID();
 
-    await prisma.$transaction([
-      prisma.refreshToken.create({
+    const issued = await runSerializableTransaction(async (tx) => {
+      const current = await tx.user.findUnique({
+        where: { id: user.id },
+        select: { email: true, role: true, status: true, authVersion: true }
+      });
+      if (
+        !current ||
+        current.status !== "ACTIVE" ||
+        current.authVersion !== user.authVersion ||
+        current.email !== user.email ||
+        current.role !== user.role
+      ) {
+        return false;
+      }
+
+      await tx.refreshToken.create({
         data: {
           userId: user.id,
           familyId,
           tokenHash: hashToken(refreshToken),
           expiresAt: new Date(Date.now() + env.REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000)
         }
-      }),
-      prisma.user.update({ where: { id: user.id }, data: { lastActiveAt: new Date() } })
-    ]);
+      });
+      await tx.user.update({ where: { id: user.id }, data: { lastActiveAt: new Date() } });
+      if (auditAction) {
+        await writeAuditLog({ userId: user.id, action: auditAction, request }, tx);
+      }
+      return true;
+    });
+
+    if (!issued) return null;
 
     setRefreshCookie(reply, refreshToken);
     return publicSession({
@@ -76,35 +98,40 @@ export async function authRoutes(app: FastifyInstance) {
     const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24);
     const role = adminEmails().has(email) ? "ADMIN" : "USER";
 
-    const user = await prisma.user.create({
-      data: {
-        email,
-        passwordHash: await hashPassword(body.password),
-        status: "PENDING_EMAIL_VERIFICATION",
-        role,
-        ageAttestedAt: new Date(),
-        policyAcceptedAt: new Date(),
-        policyVersion: env.POLICY_VERSION,
-        emailVerificationTokens: {
-          create: {
-            tokenHash: verificationTokenHash,
-            expiresAt
+    const passwordHash = await hashPassword(body.password);
+    const user = await prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: {
+          email,
+          passwordHash,
+          status: "PENDING_EMAIL_VERIFICATION",
+          role,
+          ageAttestedAt: new Date(),
+          policyAcceptedAt: new Date(),
+          policyVersion: env.POLICY_VERSION,
+          emailVerificationTokens: {
+            create: {
+              tokenHash: verificationTokenHash,
+              expiresAt
+            }
+          },
+          profile: {
+            create: {
+              displayName: body.displayName,
+              profileComplete: false
+            }
           }
         },
-        profile: {
-          create: {
-            displayName: body.displayName,
-            profileComplete: false
-          }
-        }
-      },
-      select: { id: true, email: true, role: true }
-    });
+        select: { id: true, email: true, role: true }
+      });
 
-    await writeAuditLog({
-      userId: user.id,
-      action: "auth.register",
-      request
+      await writeAuditLog({
+        userId: created.id,
+        action: "auth.register",
+        metadata: { policyVersion: env.POLICY_VERSION, minimumAge: 18 },
+        request
+      }, tx);
+      return created;
     });
 
     await sendVerificationEmail({
@@ -222,7 +249,11 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "Invalid or expired verification token" });
     }
 
-      return issueSession(verifiedUser, reply);
+      const session = await issueSession(verifiedUser, reply);
+      if (!session) {
+        return reply.code(409).send({ error: "Account state changed; sign in to continue" });
+      }
+      return session;
     }
   );
 
@@ -249,18 +280,16 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.code(403).send({ error: "Account unavailable" });
     }
 
-    await writeAuditLog({
-      userId: user.id,
-      action: "auth.login",
-      request
-    });
-
-      return issueSession({
+      const session = await issueSession({
         id: user.id,
         email: user.email,
         role: user.role,
         authVersion: user.authVersion
-      }, reply);
+      }, reply, request, "auth.login");
+      if (!session) {
+        return reply.code(403).send({ error: "Account unavailable" });
+      }
+      return session;
     }
   );
 
@@ -413,48 +442,41 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.code(403).send({ error: "Invalid request origin" });
     }
     const currentHash = hashToken(credential.token);
-    const current = await prisma.refreshToken.findUnique({
-      where: { tokenHash: currentHash },
-      include: {
-        user: { select: { id: true, email: true, role: true, status: true, authVersion: true } }
-      }
-    });
-
-    if (!current || current.user.status !== "ACTIVE") {
-      clearRefreshCookie(reply);
-      return reply.code(401).send({ error: "Invalid or expired refresh token" });
-    }
-
-    if (current.revokedAt) {
-      if (current.revokedReason === "ROTATED") {
-        await prisma.refreshToken.updateMany({
-          where: { familyId: current.familyId, revokedAt: null },
-          data: { revokedAt: new Date(), revokedReason: "REUSE_DETECTED" }
-        });
-        await writeAuditLog({
-          userId: current.user.id,
-          action: "auth.refresh_reuse_detected",
-          metadata: { familyId: current.familyId },
-          request
-        });
-      }
-      clearRefreshCookie(reply);
-      return reply.code(401).send({ error: "Invalid or expired refresh token" });
-    }
-
-    if (current.expiresAt <= new Date()) {
-      clearRefreshCookie(reply);
-      return reply.code(401).send({ error: "Invalid or expired refresh token" });
-    }
-
     const nextRefreshToken = createOpaqueToken();
-    const rotated = await prisma.$transaction(async (tx) => {
+    const outcome = await runSerializableTransaction(async (tx) => {
+      const current = await tx.refreshToken.findUnique({
+        where: { tokenHash: currentHash },
+        include: {
+          user: { select: { id: true, email: true, role: true, status: true, authVersion: true } }
+        }
+      });
+      if (!current || current.user.status !== "ACTIVE" || current.expiresAt <= new Date()) {
+        return { kind: "invalid" as const };
+      }
+
+      if (current.revokedAt) {
+        if (current.revokedReason === "ROTATED") {
+          const revoked = await tx.refreshToken.updateMany({
+            where: { familyId: current.familyId, revokedAt: null },
+            data: { revokedAt: new Date(), revokedReason: "REUSE_DETECTED" }
+          });
+          if (revoked.count > 0) {
+            await writeAuditLog({
+              userId: current.user.id,
+              action: "auth.refresh_reuse_detected",
+              metadata: { familyId: current.familyId },
+              request
+            }, tx);
+          }
+        }
+        return { kind: "invalid" as const };
+      }
+
       const revoked = await tx.refreshToken.updateMany({
         where: { id: current.id, revokedAt: null },
         data: { revokedAt: new Date(), revokedReason: "ROTATED" }
       });
-
-      if (revoked.count !== 1) return false;
+      if (revoked.count !== 1) return { kind: "invalid" as const };
 
       await tx.refreshToken.create({
         data: {
@@ -464,39 +486,28 @@ export async function authRoutes(app: FastifyInstance) {
           expiresAt: new Date(Date.now() + env.REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000)
         }
       });
-      return true;
+      await writeAuditLog({ userId: current.user.id, action: "auth.refresh", request }, tx);
+      return { kind: "rotated" as const, user: current.user };
     });
 
-    if (!rotated) {
-      await prisma.refreshToken.updateMany({
-        where: { familyId: current.familyId, revokedAt: null },
-        data: { revokedAt: new Date(), revokedReason: "REUSE_DETECTED" }
-      });
-      await writeAuditLog({
-        userId: current.user.id,
-        action: "auth.refresh_reuse_detected",
-        metadata: { familyId: current.familyId },
-        request
-      });
+    if (outcome.kind === "invalid") {
       clearRefreshCookie(reply);
       return reply.code(401).send({ error: "Invalid or expired refresh token" });
     }
 
     const accessToken = app.jwt.sign({
-      sub: current.user.id,
-      email: current.user.email,
-      role: current.user.role,
-      av: current.user.authVersion
+      sub: outcome.user.id,
+      email: outcome.user.email,
+      role: outcome.user.role,
+      av: outcome.user.authVersion
     });
-
-    await writeAuditLog({ userId: current.user.id, action: "auth.refresh", request });
 
       setRefreshCookie(reply, nextRefreshToken);
       return publicSession({
         token: accessToken,
         accessToken,
         refreshToken: nextRefreshToken,
-        user: { id: current.user.id, email: current.user.email, role: current.user.role }
+        user: { id: outcome.user.id, email: outcome.user.email, role: outcome.user.role }
       });
     }
   );
@@ -509,18 +520,19 @@ export async function authRoutes(app: FastifyInstance) {
     }
     clearRefreshCookie(reply);
     if (!credential.token) return reply.code(204).send();
-    const session = await prisma.refreshToken.findUnique({
-      where: { tokenHash: hashToken(credential.token) },
-      select: { id: true, userId: true, revokedAt: true }
-    });
+    await runSerializableTransaction(async (tx) => {
+      const session = await tx.refreshToken.findUnique({
+        where: { tokenHash: hashToken(credential.token!) },
+        select: { id: true, userId: true, revokedAt: true }
+      });
+      if (!session || session.revokedAt) return;
 
-    if (session && !session.revokedAt) {
-      await prisma.refreshToken.update({
+      await tx.refreshToken.update({
         where: { id: session.id },
         data: { revokedAt: new Date(), revokedReason: "LOGOUT" }
       });
-      await writeAuditLog({ userId: session.userId, action: "auth.logout", request });
-    }
+      await writeAuditLog({ userId: session.userId, action: "auth.logout", request }, tx);
+    });
 
     return reply.code(204).send();
   });
