@@ -28,7 +28,10 @@ npm run seed
 npm run smoke
 ```
 
-GitHub Actions runs both paths for every backend pull request. It applies all migrations to a clean PostgreSQL 16 database, starts the compiled server, waits for readiness, and runs the smoke suite.
+GitHub Actions runs both paths for every backend pull request. It applies all migrations to a clean
+PostgreSQL 16 database, seeds it, creates a custom-format logical backup, restores that backup into a
+new database, verifies migration history, and runs the compiled API plus full smoke suite against the
+restored copy.
 
 ## Real And Test Data
 
@@ -122,6 +125,11 @@ tokens in the same transaction, immediately invalidating every older access cred
 ## Backup And Restore
 
 The production database provider should own encrypted automatic backups and point-in-time recovery. Before a schema migration, also take an on-demand snapshot and record its identifier in the deployment notes.
+
+CI performs a restore drill on every backend change, but it does not prove the production provider's
+encryption, retention, access controls, point-in-time recovery, or snapshot availability. Verify those
+provider controls during provisioning and perform a production-like restore drill before beta launch
+and at least quarterly thereafter without overwriting the live database.
 
 For an authorized manual logical backup from a secure operator machine:
 
